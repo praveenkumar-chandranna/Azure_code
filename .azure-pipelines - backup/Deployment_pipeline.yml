@@ -1,0 +1,196 @@
+trigger: none
+
+parameters:
+  - name: Feature_Branch
+    type: string
+    displayName: "Package manifest to deploy (e.g. package name / branch name)"
+  - name: environment
+    type: string
+    displayName: "Deployment environment"
+    default: SIT
+    values:
+      - SIT
+      - QA
+      - UAT
+      - PROD
+  - name: testlevel
+    type: string
+    displayName: "Test class run level"
+    default: RunSpecifiedTests
+    values:
+      - NoTestRun
+      - RunLocalTests
+      - RunSpecifiedTests
+      - RunAllTestsInOrg
+
+variables:
+  - group: RCPL-Salesforce-Secrets
+  - name: SF_ALIAS
+    value: RCPLOrg
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+  - job: Deployment_Build
+    displayName: "Deployment Build"
+    steps:
+      - script: |
+          CURRENT_BRANCH="$(Build.SourceBranchName)"
+          ENVIRONMENT="${{ parameters.environment }}"
+          echo "Branch: $CURRENT_BRANCH | Environment: $ENVIRONMENT"
+          case "$ENVIRONMENT" in
+            SIT)   EXPECTED_BRANCH="SIT" ;;
+            QA)    EXPECTED_BRANCH="QA" ;;
+            UAT)   EXPECTED_BRANCH="UAT" ;;
+            PROD)  EXPECTED_BRANCH="master" ;;
+            *)
+              echo "Unsupported environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [[ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]]; then
+            echo "Branch '$CURRENT_BRANCH' does not match environment '$ENVIRONMENT' (expected '$EXPECTED_BRANCH')"
+            exit 1
+          fi
+          echo "##vso[task.setvariable variable=ENVIRONMENT]$ENVIRONMENT"
+          echo "##vso[task.setvariable variable=FEATURE_BRANCH]${{ parameters.Feature_Branch }}"
+          TEST_LEVEL="${{ parameters.testlevel }}"
+          echo "##vso[task.setvariable variable=TEST_LEVEL]${TEST_LEVEL:-RunSpecifiedTests}"
+        displayName: "Set Environment Variables"
+
+      - checkout: self
+        fetchDepth: 0
+
+      - task: NodeTool@0
+        displayName: "Setup Node.js"
+        inputs:
+          versionSpec: "22.x"
+
+      - script: |
+          npm install -g @salesforce/cli@latest
+          sf --version
+        displayName: "Install Salesforce CLI"
+
+      - script: |
+          echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
+          chmod 600 server.key
+        displayName: "Generate JWT Private Key File"
+
+      - script: |
+          case "$(ENVIRONMENT)" in
+            SIT)
+              echo "##vso[task.setvariable variable=CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_SIT)"
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_SIT_USERNAME)"
+              echo "##vso[task.setvariable variable=LOGIN_URL]$(SANDBOX_URL)"
+              ;;
+            QA)
+              echo "##vso[task.setvariable variable=CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_QA)"
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_QA_USERNAME)"
+              echo "##vso[task.setvariable variable=LOGIN_URL]$(SANDBOX_URL)"
+              ;;
+            UAT)
+              echo "##vso[task.setvariable variable=CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_UAT)"
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_UAT_USERNAME)"
+              echo "##vso[task.setvariable variable=LOGIN_URL]$(SANDBOX_URL)"
+              ;;
+            PROD)
+              echo "##vso[task.setvariable variable=CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_PROD)"
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_PROD_USERNAME)"
+              echo "##vso[task.setvariable variable=LOGIN_URL]$(LOGIN_URL)"
+              ;;
+            *)
+              echo "Unsupported environment: $(ENVIRONMENT)"
+              exit 1
+              ;;
+          esac
+        displayName: "Set Org Credentials Based on Environment"
+
+      - script: |
+          sf org logout --all --no-prompt || true
+        displayName: "Clear Prior Salesforce Sessions"
+
+      - script: |
+          sf org login jwt \
+            --client-id "$(CLIENT_ID)" \
+            --jwt-key-file server.key \
+            --username "$(SF_USERNAME)" \
+            --instance-url "$(LOGIN_URL)" \
+            --set-default
+        displayName: "Authenticate to Salesforce Org"
+
+      - script: |
+          MANIFEST="$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_package.xml"
+          if [[ ! -f "$MANIFEST" ]]; then
+            echo "Manifest file not found: $MANIFEST"
+            exit 1
+          fi
+          echo "##vso[task.setvariable variable=MANIFEST_PATH]$MANIFEST"
+        displayName: "Check Manifest Exists"
+
+      - script: |
+          if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]]; then
+            TEST_CLASS_FILE="$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_TestClass.txt"
+            if [[ ! -f "$TEST_CLASS_FILE" ]]; then
+              echo "Test class file not found: $TEST_CLASS_FILE"
+              exit 1
+            fi
+            TEST_CLASSES=$(paste -sd ' ' "$TEST_CLASS_FILE")
+            echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+          fi
+        displayName: "Prepare Test Classes"
+
+      - script: |
+          echo "Validating deployment of manifest: $(MANIFEST_PATH)"
+          CMD=(sf project deploy validate \
+            --manifest "$(MANIFEST_PATH)" \
+            --target-org "$(SF_USERNAME)" \
+            --test-level "$(TEST_LEVEL)" \
+            --wait 30 \
+            --ignore-warnings \
+            --verbose)
+          if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
+            CMD+=(--tests $(TEST_CLASSES))
+          fi
+          echo "Running: ${CMD[@]}"
+          "${CMD[@]}"
+        displayName: "Deployment Validation"
+
+      - script: |
+          echo "Deploying manifest: $(MANIFEST_PATH)"
+          CMD=(sf project deploy start \
+            --manifest "$(MANIFEST_PATH)" \
+            --target-org "$(SF_USERNAME)" \
+            --test-level "$(TEST_LEVEL)" \
+            --wait 10 \
+            --ignore-conflicts)
+          if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
+            CMD+=(--tests $(TEST_CLASSES))
+          fi
+          echo "Running: ${CMD[@]}"
+          "${CMD[@]}"
+        displayName: "Deploy to Salesforce Org"
+
+      - script: |
+          DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+          git config user.email "$(GIT_USER_EMAIL)"
+          git config user.name  "$(GIT_USER_NAME)"
+          git fetch --tags
+          EXISTING=$(git tag -l "PROD_${DATE_SUFFIX}_v*" | sort -V | tail -1)
+          if [[ -z "$EXISTING" ]]; then
+            NEXT_VERSION="v0.1"
+          else
+            LAST_MINOR=$(echo "$EXISTING" | grep -oP '(?<=_v0\.)[0-9]+')
+            NEXT_MINOR=$((LAST_MINOR + 1))
+            NEXT_VERSION="v0.${NEXT_MINOR}"
+          fi
+          TAG_NAME="PROD_${DATE_SUFFIX}_${NEXT_VERSION}"
+          git tag -a "$TAG_NAME" -m "PROD deployment ${NEXT_VERSION} on $(TZ='Asia/Kolkata' date +'%d-%m-%Y') via Azure DevOps"
+          git push origin "$TAG_NAME"
+          echo "Tag created and pushed: $TAG_NAME"
+        displayName: "Create PROD Deployment Tag"
+        condition: and(succeeded(), eq('${{ parameters.environment }}', 'PROD'))
+
+      - script: rm -f server.key
+        displayName: "Cleanup JWT Key"
+        condition: always()

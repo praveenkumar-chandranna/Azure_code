@@ -1,0 +1,295 @@
+name: RCPL Weekly Promotion Validation
+
+# ─────────────────────────────────────────────────────────────────
+# Runs every Sunday at 12:00 AM IST (18:30 UTC Saturday)
+# — runs AFTER Weekly_Branch_And_Package_Generator completes —
+#
+# Flow:  feature/dev_DD_MM_YYYY  → validates against QA org
+#        feature/qa_DD_MM_YYYY   → validates against UAT org
+#        feature/uat_DD_MM_YYYY  → validates against PROD org
+#
+# Test level: RunLocalTests (all stages)
+# ─────────────────────────────────────────────────────────────────
+
+schedules:
+  - cron: "30 18 * * 6"        # 18:30 UTC Saturday = 00:00 IST Sunday
+    displayName: "Weekly Sunday Promotion Validation"
+    branches:
+      include:
+        - dev
+    always: true
+
+trigger: none
+
+parameters:
+  - name: manualRun
+    type: boolean
+    displayName: "Manual Run"
+    default: false
+  - name: customDate
+    type: string
+    displayName: "Custom date suffix (DD_MM_YYYY) — leave blank to use today"
+    default: ""
+
+variables:
+  - group: RCPL-Salesforce-Secrets
+  - name: SF_ALIAS
+    value: RCPLOrg
+
+pool:
+  vmImage: ubuntu-latest
+
+# ─────────────────────────────────────────────────────────────────
+# STAGE 1 — feature/dev_DD_MM_YYYY → QA org
+# ─────────────────────────────────────────────────────────────────
+stages:
+  - stage: Validate_Dev_To_QA
+    displayName: "Validate Dev → QA"
+    jobs:
+      - job: Validate_Dev_QA
+        displayName: "Validate feature/dev branch against QA org"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - script: |
+              if [[ -n "${{ parameters.customDate }}" ]]; then
+                DATE_SUFFIX="${{ parameters.customDate }}"
+              else
+                DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              fi
+              DEV_BRANCH="feature/dev_${DATE_SUFFIX}"
+              echo "##vso[task.setvariable variable=DEV_BRANCH]$DEV_BRANCH"
+              echo "Feature branch: $DEV_BRANCH"
+            displayName: "Compute Dev Branch Name"
+
+          - task: NodeTool@0
+            displayName: "Setup Node.js"
+            inputs:
+              versionSpec: "20.x"
+
+          - script: |
+              npm install -g @salesforce/cli@latest
+              sf --version
+            displayName: "Install Salesforce CLI"
+
+          - script: |
+              echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
+              chmod 600 server.key
+            displayName: "Generate JWT Key"
+
+          - script: |
+              sf org logout --all --no-prompt || true
+            displayName: "Clear Prior Salesforce Sessions"
+
+          - script: |
+              sf org login jwt \
+                --client-id "$(SALESFORCE_CONSUMER_KEY_QA)" \
+                --jwt-key-file server.key \
+                --username "$(SFDX_AUTH_QA_USERNAME)" \
+                --instance-url "$(SANDBOX_URL)" \
+                --alias "$(SF_ALIAS)" \
+                --set-default
+            displayName: "Authenticate to QA Org"
+
+          - script: |
+              # Checkout the auto-generated dev feature branch
+              git fetch --all
+              git checkout "$(DEV_BRANCH)" || { echo "ERROR: Branch $(DEV_BRANCH) not found. Run the Branch & Package Generator first."; exit 1; }
+
+              PACKAGE_XML="$(Build.SourcesDirectory)/manifest/$(DEV_BRANCH)_package.xml"
+              echo "Looking for package: $PACKAGE_XML"
+
+              if [[ ! -f "$PACKAGE_XML" ]]; then
+                echo "ERROR: Package manifest not found: $PACKAGE_XML"
+                exit 1
+              fi
+
+              echo "Package found: $PACKAGE_XML"
+              echo "##vso[task.setvariable variable=PACKAGE_XML]$PACKAGE_XML"
+            displayName: "Checkout Branch & Verify Package Manifest"
+
+          - script: |
+              echo "Validating: $(DEV_BRANCH) → QA org"
+              sf project deploy validate \
+                --manifest "$(PACKAGE_XML)" \
+                --target-org "$(SF_ALIAS)" \
+                --test-level RunLocalTests \
+                --wait 30 \
+                --ignore-warnings \
+                --verbose
+            displayName: "Deploy Validate against QA Org (RunLocalTests)"
+
+          - script: rm -f server.key
+            displayName: "Cleanup JWT Key"
+            condition: always()
+
+# ─────────────────────────────────────────────────────────────────
+# STAGE 2 — feature/qa_DD_MM_YYYY → UAT org
+# ─────────────────────────────────────────────────────────────────
+  - stage: Validate_QA_To_UAT
+    displayName: "Validate QA → UAT"
+    dependsOn: Validate_Dev_To_QA
+    condition: succeeded()
+    jobs:
+      - job: Validate_QA_UAT
+        displayName: "Validate feature/qa branch against UAT org"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - script: |
+              if [[ -n "${{ parameters.customDate }}" ]]; then
+                DATE_SUFFIX="${{ parameters.customDate }}"
+              else
+                DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              fi
+              QA_BRANCH="feature/qa_${DATE_SUFFIX}"
+              echo "##vso[task.setvariable variable=QA_BRANCH]$QA_BRANCH"
+              echo "Feature branch: $QA_BRANCH"
+            displayName: "Compute QA Branch Name"
+
+          - task: NodeTool@0
+            displayName: "Setup Node.js"
+            inputs:
+              versionSpec: "20.x"
+
+          - script: |
+              npm install -g @salesforce/cli@latest
+              sf --version
+            displayName: "Install Salesforce CLI"
+
+          - script: |
+              echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
+              chmod 600 server.key
+            displayName: "Generate JWT Key"
+
+          - script: |
+              sf org logout --all --no-prompt || true
+            displayName: "Clear Prior Salesforce Sessions"
+
+          - script: |
+              sf org login jwt \
+                --client-id "$(SALESFORCE_CONSUMER_KEY_UAT)" \
+                --jwt-key-file server.key \
+                --username "$(SFDX_AUTH_UAT_USERNAME)" \
+                --instance-url "$(SANDBOX_URL)" \
+                --alias "$(SF_ALIAS)" \
+                --set-default
+            displayName: "Authenticate to UAT Org"
+
+          - script: |
+              git fetch --all
+              git checkout "$(QA_BRANCH)" || { echo "ERROR: Branch $(QA_BRANCH) not found. Run the Branch & Package Generator first."; exit 1; }
+
+              PACKAGE_XML="$(Build.SourcesDirectory)/manifest/$(QA_BRANCH)_package.xml"
+              echo "Looking for package: $PACKAGE_XML"
+
+              if [[ ! -f "$PACKAGE_XML" ]]; then
+                echo "ERROR: Package manifest not found: $PACKAGE_XML"
+                exit 1
+              fi
+
+              echo "Package found: $PACKAGE_XML"
+              echo "##vso[task.setvariable variable=PACKAGE_XML]$PACKAGE_XML"
+            displayName: "Checkout Branch & Verify Package Manifest"
+
+          - script: |
+              echo "Validating: $(QA_BRANCH) → UAT org"
+              sf project deploy validate \
+                --manifest "$(PACKAGE_XML)" \
+                --target-org "$(SF_ALIAS)" \
+                --test-level RunLocalTests \
+                --wait 30 \
+                --ignore-warnings \
+                --verbose
+            displayName: "Deploy Validate against UAT Org (RunLocalTests)"
+
+          - script: rm -f server.key
+            displayName: "Cleanup JWT Key"
+            condition: always()
+
+# ─────────────────────────────────────────────────────────────────
+# STAGE 3 — feature/uat_DD_MM_YYYY → PROD org
+# ─────────────────────────────────────────────────────────────────
+  - stage: Validate_UAT_To_PROD
+    displayName: "Validate UAT → PROD"
+    dependsOn: Validate_QA_To_UAT
+    condition: succeeded()
+    jobs:
+      - job: Validate_UAT_PROD
+        displayName: "Validate feature/uat branch against PROD org"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - script: |
+              if [[ -n "${{ parameters.customDate }}" ]]; then
+                DATE_SUFFIX="${{ parameters.customDate }}"
+              else
+                DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              fi
+              UAT_BRANCH="feature/uat_${DATE_SUFFIX}"
+              echo "##vso[task.setvariable variable=UAT_BRANCH]$UAT_BRANCH"
+              echo "Feature branch: $UAT_BRANCH"
+            displayName: "Compute UAT Branch Name"
+
+          - task: NodeTool@0
+            displayName: "Setup Node.js"
+            inputs:
+              versionSpec: "20.x"
+
+          - script: |
+              npm install -g @salesforce/cli@latest
+              sf --version
+            displayName: "Install Salesforce CLI"
+
+          - script: |
+              echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
+              chmod 600 server.key
+            displayName: "Generate JWT Key"
+
+          - script: |
+              sf org logout --all --no-prompt || true
+            displayName: "Clear Prior Salesforce Sessions"
+
+          - script: |
+              sf org login jwt \
+                --client-id "$(SALESFORCE_CONSUMER_KEY_PROD)" \
+                --jwt-key-file server.key \
+                --username "$(SFDX_AUTH_PROD_USERNAME)" \
+                --instance-url "$(LOGIN_URL)" \
+                --alias "$(SF_ALIAS)" \
+                --set-default
+            displayName: "Authenticate to PROD Org"
+
+          - script: |
+              git fetch --all
+              git checkout "$(UAT_BRANCH)" || { echo "ERROR: Branch $(UAT_BRANCH) not found. Run the Branch & Package Generator first."; exit 1; }
+
+              PACKAGE_XML="$(Build.SourcesDirectory)/manifest/$(UAT_BRANCH)_package.xml"
+              echo "Looking for package: $PACKAGE_XML"
+
+              if [[ ! -f "$PACKAGE_XML" ]]; then
+                echo "ERROR: Package manifest not found: $PACKAGE_XML"
+                exit 1
+              fi
+
+              echo "Package found: $PACKAGE_XML"
+              echo "##vso[task.setvariable variable=PACKAGE_XML]$PACKAGE_XML"
+            displayName: "Checkout Branch & Verify Package Manifest"
+
+          - script: |
+              echo "Validating: $(UAT_BRANCH) → PROD org"
+              sf project deploy validate \
+                --manifest "$(PACKAGE_XML)" \
+                --target-org "$(SF_ALIAS)" \
+                --test-level RunLocalTests \
+                --wait 60 \
+                --ignore-warnings \
+                --verbose
+            displayName: "Deploy Validate against PROD Org (RunLocalTests)"
+
+          - script: rm -f server.key
+            displayName: "Cleanup JWT Key"
+            condition: always()

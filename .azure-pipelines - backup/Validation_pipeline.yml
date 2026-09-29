@@ -1,0 +1,162 @@
+trigger: none
+
+parameters:
+  - name: Feature_Branch
+    displayName: "Branch to validate"
+    type: string
+  - name: environment
+    displayName: "Validation environment"
+    type: string
+    default: SIT
+    values:
+      - SIT
+      - QA
+      - UAT
+      - PROD
+  - name: testlevel
+    displayName: "Test class run type"
+    type: string
+    default: RunSpecifiedTests
+    values:
+      - RunLocalTests
+      - RunSpecifiedTests
+      - RunAllTestsInOrg
+  - name: specifiedclass
+    displayName: "Test class names (space separated)"
+    type: string
+    default: ""
+
+variables:
+  - group: RCPL-Salesforce-Secrets
+  - name: SF_ENV_ALIAS
+    value: PCBLOrg
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+  - job: Validation_Build
+    displayName: "Validation Build"
+    steps:
+      - checkout: self
+        fetchDepth: 0
+
+      - task: NodeTool@0
+        displayName: "Setup Node.js"
+        inputs:
+          versionSpec: "20.x"
+
+      - script: |
+          npm install -g @salesforce/cli@latest
+          sf --version
+        displayName: "Install Salesforce CLI"
+
+      - script: |
+          sf plugins install @salesforce/sfdx-scanner@latest || echo "Plugin already installed"
+        displayName: "Install Salesforce Code Analyzer Plugin"
+
+      - script: |
+          echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
+          chmod 600 server.key
+        displayName: "Generate JWT Key File"
+
+      - script: |
+          sf org logout --all --no-prompt || true
+        displayName: "Clear Prior Salesforce Sessions"
+
+      - script: |
+          case "${{ parameters.environment }}" in
+            SIT)
+              CLIENT_ID="$(SALESFORCE_CONSUMER_KEY_SIT)"
+              USERNAME="$(SFDX_AUTH_SIT_USERNAME)"
+              LOGIN_URL="$(SANDBOX_URL)"
+              ;;
+            QA)
+              CLIENT_ID="$(SALESFORCE_CONSUMER_KEY_QA)"
+              USERNAME="$(SFDX_AUTH_QA_USERNAME)"
+              LOGIN_URL="$(SANDBOX_URL)"
+              ;;
+            UAT)
+              CLIENT_ID="$(SALESFORCE_CONSUMER_KEY_UAT)"
+              USERNAME="$(SFDX_AUTH_UAT_USERNAME)"
+              LOGIN_URL="$(SANDBOX_URL)"
+              ;;
+            PROD)
+              CLIENT_ID="$(SALESFORCE_CONSUMER_KEY_PROD)"
+              USERNAME="$(SFDX_AUTH_PROD_USERNAME)"
+              LOGIN_URL="$(LOGIN_URL)"
+              ;;
+            *)
+              echo "Unknown environment: ${{ parameters.environment }}"
+              exit 1
+              ;;
+          esac
+          sf org login jwt \
+            --client-id "$CLIENT_ID" \
+            --jwt-key-file server.key \
+            --username "$USERNAME" \
+            --instance-url "$LOGIN_URL" \
+            --alias "$(SF_ENV_ALIAS)" \
+            --set-default
+        displayName: "Authorize to Salesforce Org"
+
+      - script: |
+          sf code-analyzer run \
+            --normalize-severity \
+            --target . \
+            --outfile results.json \
+            --json --verbose || true
+        displayName: "Run Salesforce Code Analyzer"
+
+      - script: |
+          if [[ -f results.json ]]; then
+            echo "| Rule Id | Severity | File | Line | Message |"
+            echo "|---------|----------|------|------|---------|"
+            jq -r '.[] | "|\(.ruleId // "N/A")|\(.severity // "N/A")|\(.file // "N/A")|\((.line|tostring) // "N/A")|\(.message // "N/A")|"' results.json || true
+          fi
+        displayName: "Display Salesforce Scanner Report"
+
+      - script: |
+          if [[ "${{ parameters.testlevel }}" == "RunSpecifiedTests" ]]; then
+            if [[ -n "${{ parameters.specifiedclass }}" ]]; then
+              TEST_CLASSES="${{ parameters.specifiedclass }}"
+            else
+              TEST_FILE="$(Build.SourcesDirectory)/manifest/${{ parameters.Feature_Branch }}_TestClass.txt"
+              if [[ ! -f "$TEST_FILE" ]]; then
+                echo "Test class file not found: $TEST_FILE"
+                exit 1
+              fi
+              TEST_CLASSES=$(paste -sd ' ' "$TEST_FILE")
+            fi
+            echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+          fi
+        displayName: "Determine Test Classes"
+
+      - script: |
+          PACKAGE_XML="$(Build.SourcesDirectory)/manifest/${{ parameters.Feature_Branch }}_package.xml"
+          echo "Validating: $PACKAGE_XML"
+          TESTLEVEL="${{ parameters.testlevel }}"
+          TESTS="$(TEST_CLASSES)"
+          if [[ "$TESTLEVEL" == "RunSpecifiedTests" ]]; then
+            if [[ -z "$TESTS" ]]; then
+              echo "No test classes specified, switching to RunLocalTests"
+              TESTLEVEL="RunLocalTests"
+            fi
+            sf project deploy validate \
+              --manifest "$PACKAGE_XML" \
+              --target-org "$(SF_ENV_ALIAS)" \
+              --test-level "$TESTLEVEL" \
+              --tests $TESTS \
+              --wait 30
+          else
+            sf project deploy validate \
+              --manifest "$PACKAGE_XML" \
+              --target-org "$(SF_ENV_ALIAS)" \
+              --test-level "$TESTLEVEL" \
+              --wait 30
+          fi
+        displayName: "Deployment Validation"
+
+      - script: rm -f server.key
+        displayName: "Cleanup"
+        condition: always()

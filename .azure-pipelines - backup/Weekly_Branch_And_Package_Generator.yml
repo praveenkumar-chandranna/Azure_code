@@ -1,0 +1,559 @@
+name: RCPL Weekly Branch and Package Generator
+
+# ─────────────────────────────────────────────────────────────────
+# Runs every Saturday at 10:00 PM IST (16:30 UTC)
+# 2 hours before the Sunday validation pipeline kicks off
+#
+# What this pipeline does:
+#   1. Creates feature/dev_DD_MM_YYYY branch from dev
+#      Generates delta package.xml  (dev vs QA)
+#   2. Creates feature/qa_DD_MM_YYYY branch from QA
+#      Generates delta package.xml  (QA vs UAT)
+#   3. Creates feature/uat_DD_MM_YYYY branch from UAT
+#      Generates delta package.xml  (UAT vs master)
+#   4. Commits all package files back to their branches
+#
+# Package file convention:
+#   manifest/feature/dev_DD_MM_YYYY_package.xml
+#   manifest/feature/qa_DD_MM_YYYY_package.xml
+#   manifest/feature/uat_DD_MM_YYYY_package.xml
+# ─────────────────────────────────────────────────────────────────
+
+schedules:
+  - cron: "30 16 * * 6"
+    displayName: "Weekly Saturday - Branch & Package Generator"
+    branches:
+      include:
+        - dev
+    always: true
+
+trigger: none
+
+parameters:
+  - name: manualRun
+    type: boolean
+    displayName: "Manual Run"
+    default: false
+  - name: customDate
+    type: string
+    displayName: "Custom date suffix (DD_MM_YYYY) - leave blank to use today"
+    default: ""
+
+variables:
+  - group: RCPL-Salesforce-Secrets
+  - name: SOURCE_API_VERSION
+    value: "67.0"
+
+pool:
+  vmImage: ubuntu-latest
+
+# ─────────────────────────────────────────────────────────────────
+# STAGE 1 — feature/dev_DD_MM_YYYY from dev  |  diff: dev vs QA
+# ─────────────────────────────────────────────────────────────────
+stages:
+  - stage: Generate_Dev_Branch
+    displayName: "Create Dev Feature Branch & Delta Package"
+    jobs:
+      - job: Create_Dev_Branch
+        displayName: "Branch: dev -> feature/dev_DD_MM_YYYY"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            persistCredentials: true
+
+          - script: |
+              if [[ -n "${{ parameters.customDate }}" ]]; then
+                DATE_SUFFIX="${{ parameters.customDate }}"
+              else
+                DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              fi
+              DEV_BRANCH="feature/dev_${DATE_SUFFIX}"
+              echo "##vso[task.setvariable variable=DATE_SUFFIX]$DATE_SUFFIX"
+              echo "##vso[task.setvariable variable=DEV_BRANCH]$DEV_BRANCH"
+              echo "Date suffix : $DATE_SUFFIX"
+              echo "Dev branch  : $DEV_BRANCH"
+            displayName: "Compute Branch Name"
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git fetch --all
+              git checkout dev
+              git pull origin dev
+              if git ls-remote --exit-code --heads origin "$(DEV_BRANCH)" > /dev/null 2>&1; then
+                echo "Branch $(DEV_BRANCH) already exists - checking out"
+                git checkout "$(DEV_BRANCH)"
+                git pull origin "$(DEV_BRANCH)"
+              else
+                echo "Creating new branch: $(DEV_BRANCH)"
+                git checkout -b "$(DEV_BRANCH)"
+                git push origin "$(DEV_BRANCH)"
+              fi
+            displayName: "Create feature/dev Branch from dev"
+
+          - script: |
+              cat > /tmp/gen_package.py << 'SCRIPTEOF'
+import os, sys, re
+from xml.etree import ElementTree as ET
+
+build_sources = os.environ.get("BUILD_SOURCES", "")
+branch        = os.environ.get("FEATURE_BRANCH", "feature/dev_unknown")
+
+with open("/tmp/changed_files.txt") as f:
+    changed_files = [l.strip() for l in f if l.strip()]
+
+TYPE_MAP = {
+    "classes": "ApexClass", "triggers": "ApexTrigger",
+    "lwc": "LightningComponentBundle", "aura": "AuraDefinitionBundle",
+    "pages": "ApexPage", "components": "ApexComponent",
+    "flows": "Flow", "objects": "CustomObject", "layouts": "Layout",
+    "permissionsets": "PermissionSet", "profiles": "Profile",
+    "staticresources": "StaticResource", "tabs": "CustomTab",
+    "labels": "CustomLabels", "flexipages": "FlexiPage",
+    "workflows": "Workflow", "assignmentRules": "AssignmentRules",
+    "autoResponseRules": "AutoResponseRules", "escalationRules": "EscalationRules",
+    "queues": "Queue", "groups": "Group", "roles": "Role",
+    "reports": "Report", "dashboards": "Dashboard",
+    "emailTemplates": "EmailTemplate", "messageChannels": "LightningMessageChannel",
+    "customMetadata": "CustomMetadata", "namedCredentials": "NamedCredential",
+    "externalCredentials": "ExternalCredential", "globalValueSets": "GlobalValueSet",
+    "duplicateRules": "DuplicateRule", "matchingRules": "MatchingRules",
+    "sharingRules": "SharingRules", "pathAssistants": "PathAssistant",
+    "quickActions": "QuickAction", "approvalProcesses": "ApprovalProcess",
+    "notificationtypes": "NotificationTypeConfig",
+}
+SUB_TYPE_MAP = {
+    "fields": "CustomField", "validationRules": "ValidationRule",
+    "recordTypes": "RecordType", "listViews": "ListView",
+    "webLinks": "WebLink", "compactLayouts": "CompactLayout",
+    "fieldSets": "FieldSet", "businessProcesses": "BusinessProcess",
+    "sharingReasons": "SharingReason",
+}
+
+members_by_type = {}
+for f in changed_files:
+    if "force-app/main/default/" not in f:
+        continue
+    parts = f.replace("force-app/main/default/", "").split("/")
+    if len(parts) < 2:
+        continue
+    folder, filename = parts[0], parts[1]
+    meta_type = TYPE_MAP.get(folder)
+    if not meta_type:
+        continue
+    member = re.sub(
+        r'\.(cls|trigger|page|component|flow|layout|permissionset|profile|resource|tab|labels|flexipage|workflow|xml|js|html|css|svg|json|md)(-meta\.xml)?$',
+        '', filename
+    )
+    if folder in ("lwc", "aura"):
+        member = parts[1]
+    if folder == "objects" and len(parts) >= 4 and parts[2] in SUB_TYPE_MAP:
+        member = f"{parts[1]}.{re.sub(r'-meta\\.xml$', '', parts[3])}"
+        meta_type = SUB_TYPE_MAP[parts[2]]
+    elif folder == "objects":
+        member = parts[1]
+    if member:
+        members_by_type.setdefault(meta_type, set()).add(member)
+
+if not members_by_type:
+    print("WARNING: No metadata members detected")
+    sys.exit(1)
+
+NS = "http://soap.sforce.com/2006/04/metadata"
+ET.register_namespace("", NS)
+root = ET.Element(f"{{{NS}}}Package")
+for mtype in sorted(members_by_type):
+    types_el = ET.SubElement(root, f"{{{NS}}}types")
+    for m in sorted(members_by_type[mtype]):
+        ET.SubElement(types_el, f"{{{NS}}}members").text = m
+    ET.SubElement(types_el, f"{{{NS}}}name").text = mtype
+ET.SubElement(root, f"{{{NS}}}version").text = "67.0"
+tree = ET.ElementTree(root)
+ET.indent(tree, space="    ")
+out_dir = os.path.join(build_sources, "manifest", os.path.dirname(branch))
+os.makedirs(out_dir, exist_ok=True)
+out_path = os.path.join(build_sources, "manifest", f"{branch}_package.xml")
+with open(out_path, "wb") as fh:
+    fh.write(b'<?xml version="1.0" encoding="UTF-8" standalone="yes"/>\n')
+    tree.write(fh, encoding="utf-8", xml_declaration=False)
+print(f"Package written: {out_path}")
+for t, ms in sorted(members_by_type.items()):
+    print(f"  {t}: {sorted(ms)}")
+SCRIPTEOF
+          displayName: "Write Python Package Generator Script"
+
+          - script: |
+              git fetch --all
+              echo "Computing diff: dev vs QA"
+              CHANGED_FILES=$(git diff --name-only origin/QA...origin/dev -- force-app/ 2>/dev/null || \
+                              git diff --name-only origin/QA origin/dev -- force-app/ 2>/dev/null || echo "")
+              echo "Changed files:"
+              echo "$CHANGED_FILES"
+              if [[ -z "$CHANGED_FILES" ]]; then
+                echo "No changes detected between dev and QA. Using full package as fallback."
+                mkdir -p "$(Build.SourcesDirectory)/manifest/feature"
+                cp "$(Build.SourcesDirectory)/manifest/package.xml" \
+                   "$(Build.SourcesDirectory)/manifest/$(DEV_BRANCH)_package.xml"
+              else
+                echo "$CHANGED_FILES" > /tmp/changed_files.txt
+                python3 /tmp/gen_package.py
+              fi
+            displayName: "Generate Delta package.xml (dev vs QA)"
+            env:
+              FEATURE_BRANCH: $(DEV_BRANCH)
+              BUILD_SOURCES: $(Build.SourcesDirectory)
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git checkout "$(DEV_BRANCH)"
+              PACKAGE_FILE="manifest/$(DEV_BRANCH)_package.xml"
+              if [[ ! -f "$(Build.SourcesDirectory)/$PACKAGE_FILE" ]]; then
+                echo "ERROR: Package file not found: $PACKAGE_FILE"
+                exit 1
+              fi
+              git add "$PACKAGE_FILE"
+              if git diff --cached --quiet; then
+                echo "No changes to commit - package already up to date"
+              else
+                git commit -m "chore: auto-generate delta package for $(DEV_BRANCH) [skip ci]"
+                git push origin "$(DEV_BRANCH)"
+                echo "Package committed and pushed to $(DEV_BRANCH)"
+              fi
+            displayName: "Commit & Push package.xml to Dev Branch"
+
+# ─────────────────────────────────────────────────────────────────
+# STAGE 2 — feature/qa_DD_MM_YYYY from QA  |  diff: QA vs UAT
+# ─────────────────────────────────────────────────────────────────
+  - stage: Generate_QA_Branch
+    displayName: "Create QA Feature Branch & Delta Package"
+    dependsOn: Generate_Dev_Branch
+    condition: succeeded()
+    jobs:
+      - job: Create_QA_Branch
+        displayName: "Branch: QA -> feature/qa_DD_MM_YYYY"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            persistCredentials: true
+
+          - script: |
+              if [[ -n "${{ parameters.customDate }}" ]]; then
+                DATE_SUFFIX="${{ parameters.customDate }}"
+              else
+                DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              fi
+              QA_BRANCH="feature/qa_${DATE_SUFFIX}"
+              echo "##vso[task.setvariable variable=DATE_SUFFIX]$DATE_SUFFIX"
+              echo "##vso[task.setvariable variable=QA_BRANCH]$QA_BRANCH"
+              echo "Date suffix : $DATE_SUFFIX"
+              echo "QA branch   : $QA_BRANCH"
+            displayName: "Compute Branch Name"
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git fetch --all
+              git checkout QA
+              git pull origin QA
+              if git ls-remote --exit-code --heads origin "$(QA_BRANCH)" > /dev/null 2>&1; then
+                echo "Branch $(QA_BRANCH) already exists - checking out"
+                git checkout "$(QA_BRANCH)"
+                git pull origin "$(QA_BRANCH)"
+              else
+                echo "Creating new branch: $(QA_BRANCH)"
+                git checkout -b "$(QA_BRANCH)"
+                git push origin "$(QA_BRANCH)"
+              fi
+            displayName: "Create feature/qa Branch from QA"
+
+          - script: |
+              cat > /tmp/gen_package.py << 'SCRIPTEOF'
+import os, sys, re
+from xml.etree import ElementTree as ET
+
+build_sources = os.environ.get("BUILD_SOURCES", "")
+branch        = os.environ.get("FEATURE_BRANCH", "feature/qa_unknown")
+
+with open("/tmp/changed_files.txt") as f:
+    changed_files = [l.strip() for l in f if l.strip()]
+
+TYPE_MAP = {
+    "classes": "ApexClass", "triggers": "ApexTrigger",
+    "lwc": "LightningComponentBundle", "aura": "AuraDefinitionBundle",
+    "pages": "ApexPage", "components": "ApexComponent",
+    "flows": "Flow", "objects": "CustomObject", "layouts": "Layout",
+    "permissionsets": "PermissionSet", "profiles": "Profile",
+    "staticresources": "StaticResource", "tabs": "CustomTab",
+    "labels": "CustomLabels", "flexipages": "FlexiPage",
+    "workflows": "Workflow", "assignmentRules": "AssignmentRules",
+    "queues": "Queue", "groups": "Group", "reports": "Report",
+    "dashboards": "Dashboard", "emailTemplates": "EmailTemplate",
+    "messageChannels": "LightningMessageChannel", "customMetadata": "CustomMetadata",
+    "namedCredentials": "NamedCredential", "globalValueSets": "GlobalValueSet",
+    "duplicateRules": "DuplicateRule", "matchingRules": "MatchingRules",
+    "sharingRules": "SharingRules", "pathAssistants": "PathAssistant",
+    "quickActions": "QuickAction", "approvalProcesses": "ApprovalProcess",
+}
+SUB_TYPE_MAP = {
+    "fields": "CustomField", "validationRules": "ValidationRule",
+    "recordTypes": "RecordType", "listViews": "ListView",
+}
+
+members_by_type = {}
+for f in changed_files:
+    if "force-app/main/default/" not in f:
+        continue
+    parts = f.replace("force-app/main/default/", "").split("/")
+    if len(parts) < 2:
+        continue
+    folder, filename = parts[0], parts[1]
+    meta_type = TYPE_MAP.get(folder)
+    if not meta_type:
+        continue
+    member = re.sub(
+        r'\.(cls|trigger|page|component|flow|layout|permissionset|profile|resource|tab|labels|flexipage|workflow|xml|js|html|css|svg|json|md)(-meta\.xml)?$',
+        '', filename
+    )
+    if folder in ("lwc", "aura"):
+        member = parts[1]
+    if folder == "objects" and len(parts) >= 4 and parts[2] in SUB_TYPE_MAP:
+        member = f"{parts[1]}.{re.sub(r'-meta\\.xml$', '', parts[3])}"
+        meta_type = SUB_TYPE_MAP[parts[2]]
+    elif folder == "objects":
+        member = parts[1]
+    if member:
+        members_by_type.setdefault(meta_type, set()).add(member)
+
+if not members_by_type:
+    print("WARNING: No metadata members detected")
+    sys.exit(1)
+
+NS = "http://soap.sforce.com/2006/04/metadata"
+ET.register_namespace("", NS)
+root = ET.Element(f"{{{NS}}}Package")
+for mtype in sorted(members_by_type):
+    types_el = ET.SubElement(root, f"{{{NS}}}types")
+    for m in sorted(members_by_type[mtype]):
+        ET.SubElement(types_el, f"{{{NS}}}members").text = m
+    ET.SubElement(types_el, f"{{{NS}}}name").text = mtype
+ET.SubElement(root, f"{{{NS}}}version").text = "67.0"
+tree = ET.ElementTree(root)
+ET.indent(tree, space="    ")
+out_dir = os.path.join(build_sources, "manifest", os.path.dirname(branch))
+os.makedirs(out_dir, exist_ok=True)
+out_path = os.path.join(build_sources, "manifest", f"{branch}_package.xml")
+with open(out_path, "wb") as fh:
+    fh.write(b'<?xml version="1.0" encoding="UTF-8" standalone="yes"/>\n')
+    tree.write(fh, encoding="utf-8", xml_declaration=False)
+print(f"Package written: {out_path}")
+SCRIPTEOF
+          displayName: "Write Python Package Generator Script"
+
+          - script: |
+              git fetch --all
+              echo "Computing diff: QA vs UAT"
+              CHANGED_FILES=$(git diff --name-only origin/UAT...origin/QA -- force-app/ 2>/dev/null || \
+                              git diff --name-only origin/UAT origin/QA -- force-app/ 2>/dev/null || echo "")
+              echo "Changed files:"
+              echo "$CHANGED_FILES"
+              if [[ -z "$CHANGED_FILES" ]]; then
+                echo "No changes detected between QA and UAT. Using full package as fallback."
+                mkdir -p "$(Build.SourcesDirectory)/manifest/feature"
+                cp "$(Build.SourcesDirectory)/manifest/package.xml" \
+                   "$(Build.SourcesDirectory)/manifest/$(QA_BRANCH)_package.xml"
+              else
+                echo "$CHANGED_FILES" > /tmp/changed_files.txt
+                python3 /tmp/gen_package.py
+              fi
+            displayName: "Generate Delta package.xml (QA vs UAT)"
+            env:
+              FEATURE_BRANCH: $(QA_BRANCH)
+              BUILD_SOURCES: $(Build.SourcesDirectory)
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git checkout "$(QA_BRANCH)"
+              PACKAGE_FILE="manifest/$(QA_BRANCH)_package.xml"
+              if [[ ! -f "$(Build.SourcesDirectory)/$PACKAGE_FILE" ]]; then
+                echo "ERROR: Package file not found: $PACKAGE_FILE"
+                exit 1
+              fi
+              git add "$PACKAGE_FILE"
+              if git diff --cached --quiet; then
+                echo "No changes to commit - package already up to date"
+              else
+                git commit -m "chore: auto-generate delta package for $(QA_BRANCH) [skip ci]"
+                git push origin "$(QA_BRANCH)"
+                echo "Package committed and pushed to $(QA_BRANCH)"
+              fi
+            displayName: "Commit & Push package.xml to QA Branch"
+
+# ─────────────────────────────────────────────────────────────────
+# STAGE 3 — feature/uat_DD_MM_YYYY from UAT  |  diff: UAT vs master
+# ─────────────────────────────────────────────────────────────────
+  - stage: Generate_UAT_Branch
+    displayName: "Create UAT Feature Branch & Delta Package"
+    dependsOn: Generate_QA_Branch
+    condition: succeeded()
+    jobs:
+      - job: Create_UAT_Branch
+        displayName: "Branch: UAT -> feature/uat_DD_MM_YYYY"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            persistCredentials: true
+
+          - script: |
+              if [[ -n "${{ parameters.customDate }}" ]]; then
+                DATE_SUFFIX="${{ parameters.customDate }}"
+              else
+                DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              fi
+              UAT_BRANCH="feature/uat_${DATE_SUFFIX}"
+              echo "##vso[task.setvariable variable=DATE_SUFFIX]$DATE_SUFFIX"
+              echo "##vso[task.setvariable variable=UAT_BRANCH]$UAT_BRANCH"
+              echo "Date suffix : $DATE_SUFFIX"
+              echo "UAT branch  : $UAT_BRANCH"
+            displayName: "Compute Branch Name"
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git fetch --all
+              git checkout UAT
+              git pull origin UAT
+              if git ls-remote --exit-code --heads origin "$(UAT_BRANCH)" > /dev/null 2>&1; then
+                echo "Branch $(UAT_BRANCH) already exists - checking out"
+                git checkout "$(UAT_BRANCH)"
+                git pull origin "$(UAT_BRANCH)"
+              else
+                echo "Creating new branch: $(UAT_BRANCH)"
+                git checkout -b "$(UAT_BRANCH)"
+                git push origin "$(UAT_BRANCH)"
+              fi
+            displayName: "Create feature/uat Branch from UAT"
+
+          - script: |
+              cat > /tmp/gen_package.py << 'SCRIPTEOF'
+import os, sys, re
+from xml.etree import ElementTree as ET
+
+build_sources = os.environ.get("BUILD_SOURCES", "")
+branch        = os.environ.get("FEATURE_BRANCH", "feature/uat_unknown")
+
+with open("/tmp/changed_files.txt") as f:
+    changed_files = [l.strip() for l in f if l.strip()]
+
+TYPE_MAP = {
+    "classes": "ApexClass", "triggers": "ApexTrigger",
+    "lwc": "LightningComponentBundle", "aura": "AuraDefinitionBundle",
+    "pages": "ApexPage", "components": "ApexComponent",
+    "flows": "Flow", "objects": "CustomObject", "layouts": "Layout",
+    "permissionsets": "PermissionSet", "profiles": "Profile",
+    "staticresources": "StaticResource", "tabs": "CustomTab",
+    "labels": "CustomLabels", "flexipages": "FlexiPage",
+    "workflows": "Workflow", "assignmentRules": "AssignmentRules",
+    "queues": "Queue", "groups": "Group", "reports": "Report",
+    "dashboards": "Dashboard", "emailTemplates": "EmailTemplate",
+    "messageChannels": "LightningMessageChannel", "customMetadata": "CustomMetadata",
+    "namedCredentials": "NamedCredential", "globalValueSets": "GlobalValueSet",
+    "duplicateRules": "DuplicateRule", "matchingRules": "MatchingRules",
+    "sharingRules": "SharingRules", "pathAssistants": "PathAssistant",
+    "quickActions": "QuickAction", "approvalProcesses": "ApprovalProcess",
+}
+SUB_TYPE_MAP = {
+    "fields": "CustomField", "validationRules": "ValidationRule",
+    "recordTypes": "RecordType", "listViews": "ListView",
+}
+
+members_by_type = {}
+for f in changed_files:
+    if "force-app/main/default/" not in f:
+        continue
+    parts = f.replace("force-app/main/default/", "").split("/")
+    if len(parts) < 2:
+        continue
+    folder, filename = parts[0], parts[1]
+    meta_type = TYPE_MAP.get(folder)
+    if not meta_type:
+        continue
+    member = re.sub(
+        r'\.(cls|trigger|page|component|flow|layout|permissionset|profile|resource|tab|labels|flexipage|workflow|xml|js|html|css|svg|json|md)(-meta\.xml)?$',
+        '', filename
+    )
+    if folder in ("lwc", "aura"):
+        member = parts[1]
+    if folder == "objects" and len(parts) >= 4 and parts[2] in SUB_TYPE_MAP:
+        member = f"{parts[1]}.{re.sub(r'-meta\\.xml$', '', parts[3])}"
+        meta_type = SUB_TYPE_MAP[parts[2]]
+    elif folder == "objects":
+        member = parts[1]
+    if member:
+        members_by_type.setdefault(meta_type, set()).add(member)
+
+if not members_by_type:
+    print("WARNING: No metadata members detected")
+    sys.exit(1)
+
+NS = "http://soap.sforce.com/2006/04/metadata"
+ET.register_namespace("", NS)
+root = ET.Element(f"{{{NS}}}Package")
+for mtype in sorted(members_by_type):
+    types_el = ET.SubElement(root, f"{{{NS}}}types")
+    for m in sorted(members_by_type[mtype]):
+        ET.SubElement(types_el, f"{{{NS}}}members").text = m
+    ET.SubElement(types_el, f"{{{NS}}}name").text = mtype
+ET.SubElement(root, f"{{{NS}}}version").text = "67.0"
+tree = ET.ElementTree(root)
+ET.indent(tree, space="    ")
+out_dir = os.path.join(build_sources, "manifest", os.path.dirname(branch))
+os.makedirs(out_dir, exist_ok=True)
+out_path = os.path.join(build_sources, "manifest", f"{branch}_package.xml")
+with open(out_path, "wb") as fh:
+    fh.write(b'<?xml version="1.0" encoding="UTF-8" standalone="yes"/>\n')
+    tree.write(fh, encoding="utf-8", xml_declaration=False)
+print(f"Package written: {out_path}")
+SCRIPTEOF
+          displayName: "Write Python Package Generator Script"
+
+          - script: |
+              git fetch --all
+              echo "Computing diff: UAT vs master"
+              CHANGED_FILES=$(git diff --name-only origin/master...origin/UAT -- force-app/ 2>/dev/null || \
+                              git diff --name-only origin/master origin/UAT -- force-app/ 2>/dev/null || echo "")
+              echo "Changed files:"
+              echo "$CHANGED_FILES"
+              if [[ -z "$CHANGED_FILES" ]]; then
+                echo "No changes detected between UAT and master. Using full package as fallback."
+                mkdir -p "$(Build.SourcesDirectory)/manifest/feature"
+                cp "$(Build.SourcesDirectory)/manifest/package.xml" \
+                   "$(Build.SourcesDirectory)/manifest/$(UAT_BRANCH)_package.xml"
+              else
+                echo "$CHANGED_FILES" > /tmp/changed_files.txt
+                python3 /tmp/gen_package.py
+              fi
+            displayName: "Generate Delta package.xml (UAT vs master)"
+            env:
+              FEATURE_BRANCH: $(UAT_BRANCH)
+              BUILD_SOURCES: $(Build.SourcesDirectory)
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git checkout "$(UAT_BRANCH)"
+              PACKAGE_FILE="manifest/$(UAT_BRANCH)_package.xml"
+              if [[ ! -f "$(Build.SourcesDirectory)/$PACKAGE_FILE" ]]; then
+                echo "ERROR: Package file not found: $PACKAGE_FILE"
+                exit 1
+              fi
+              git add "$PACKAGE_FILE"
+              if git diff --cached --quiet; then
+                echo "No changes to commit - package already up to date"
+              else
+                git commit -m "chore: auto-generate delta package for $(UAT_BRANCH) [skip ci]"
+                git push origin "$(UAT_BRANCH)"
+                echo "Package committed and pushed to $(UAT_BRANCH)"
+              fi
+            displayName: "Commit & Push package.xml to UAT Branch"
