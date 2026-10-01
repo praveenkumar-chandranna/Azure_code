@@ -1,0 +1,312 @@
+name: RCPL Weekly Promotion Validation
+
+# Runs every Sunday at 12:00 AM IST (18:30 UTC Saturday)
+# Runs AFTER Weekly_Branch_Package_TestClass_Generator completes
+#
+# Flow:
+#   feature/dev_DD_MM_YYYY  → validates against QA org
+#   feature/qa_DD_MM_YYYY   → validates against UAT org
+#   feature/uat_DD_MM_YYYY  → validates against PROD org
+#
+# Test level: RunSpecifiedTests (if TestClass.txt exists), else RunLocalTests
+
+schedules:
+  - cron: "30 18 * * 6"
+    displayName: "Weekly Sunday – Promotion Validation"
+    branches:
+      include:
+        - dev
+    always: true
+
+trigger: none
+
+parameters:
+  - name: manualRun
+    type: boolean
+    displayName: "Manual Run"
+    default: false
+  - name: customDate
+    type: string
+    displayName: "Custom date suffix (DD_MM_YYYY) – leave blank to use today"
+    default: ""
+
+variables:
+  - group: RCPL-Salesforce-Secrets
+  - name: SF_ALIAS
+    value: RCPLOrg
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+
+# ── STAGE 1: feature/dev_DD_MM_YYYY → QA org ───────────────────────────────────
+  - stage: Validate_Dev_To_QA
+    displayName: "Validate Dev → QA org"
+    jobs:
+      - job: Validate_Dev_QA
+        displayName: "feature/dev branch → QA org"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - script: |
+              DATE="${{ parameters.customDate }}"
+              [[ -z "$DATE" ]] && DATE=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              BRANCH="feature/dev_${DATE}"
+              echo "##vso[task.setvariable variable=FEATURE_BRANCH]$BRANCH"
+              echo "Feature branch: $BRANCH"
+            displayName: "Compute branch name"
+
+          - task: NodeTool@0
+            displayName: "Setup Node.js"
+            inputs:
+              versionSpec: "20.x"
+
+          - script: |
+              npm install -g @salesforce/cli@latest
+              sf --version
+            displayName: "Install Salesforce CLI"
+
+          - script: |
+              echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
+              chmod 600 server.key
+            displayName: "Generate JWT key"
+
+          - script: |
+              sf org logout --all --no-prompt || true
+            displayName: "Clear prior Salesforce sessions"
+
+          - script: |
+              sf org login jwt \
+                --client-id "$(SALESFORCE_CONSUMER_KEY_QA)" \
+                --jwt-key-file server.key \
+                --username "$(SFDX_AUTH_QA_USERNAME)" \
+                --instance-url "$(SANDBOX_URL)" \
+                --alias "$(SF_ALIAS)" \
+                --set-default
+            displayName: "Authenticate to QA org"
+
+          - script: |
+              git fetch --all
+              git checkout "$(FEATURE_BRANCH)" || {
+                echo "ERROR: Branch $(FEATURE_BRANCH) not found. Run the Generator pipeline first."
+                exit 1
+              }
+              PKG="$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_package.xml"
+              [[ ! -f "$PKG" ]] && { echo "ERROR: Package not found: $PKG"; exit 1; }
+              echo "##vso[task.setvariable variable=PACKAGE_XML]$PKG"
+
+              TC="$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_TestClass.txt"
+              if [[ -f "$TC" && -s "$TC" ]]; then
+                TESTS=$(paste -sd ' ' "$TC")
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]$TESTS"
+                echo "Test level: RunSpecifiedTests | Classes: $TESTS"
+              else
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]"
+                echo "Test level: RunLocalTests (no TestClass.txt found)"
+              fi
+            displayName: "Checkout branch, resolve package & test classes"
+
+          - script: |
+              CMD=(sf project deploy validate \
+                --manifest "$(PACKAGE_XML)" \
+                --target-org "$(SF_ALIAS)" \
+                --test-level "$(TEST_LEVEL)" \
+                --wait 30 \
+                --ignore-warnings \
+                --verbose)
+              if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
+                CMD+=(--tests $(TEST_CLASSES))
+              fi
+              echo "Running: ${CMD[@]}"
+              "${CMD[@]}"
+            displayName: "Validate against QA org"
+
+          - script: rm -f server.key
+            displayName: "Cleanup JWT key"
+            condition: always()
+
+# ── STAGE 2: feature/qa_DD_MM_YYYY → UAT org ───────────────────────────────────
+  - stage: Validate_QA_To_UAT
+    displayName: "Validate QA → UAT org"
+    dependsOn: Validate_Dev_To_QA
+    condition: succeeded()
+    jobs:
+      - job: Validate_QA_UAT
+        displayName: "feature/qa branch → UAT org"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - script: |
+              DATE="${{ parameters.customDate }}"
+              [[ -z "$DATE" ]] && DATE=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              BRANCH="feature/qa_${DATE}"
+              echo "##vso[task.setvariable variable=FEATURE_BRANCH]$BRANCH"
+              echo "Feature branch: $BRANCH"
+            displayName: "Compute branch name"
+
+          - task: NodeTool@0
+            displayName: "Setup Node.js"
+            inputs:
+              versionSpec: "20.x"
+
+          - script: |
+              npm install -g @salesforce/cli@latest
+              sf --version
+            displayName: "Install Salesforce CLI"
+
+          - script: |
+              echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
+              chmod 600 server.key
+            displayName: "Generate JWT key"
+
+          - script: |
+              sf org logout --all --no-prompt || true
+            displayName: "Clear prior Salesforce sessions"
+
+          - script: |
+              sf org login jwt \
+                --client-id "$(SALESFORCE_CONSUMER_KEY_UAT)" \
+                --jwt-key-file server.key \
+                --username "$(SFDX_AUTH_UAT_USERNAME)" \
+                --instance-url "$(SANDBOX_URL)" \
+                --alias "$(SF_ALIAS)" \
+                --set-default
+            displayName: "Authenticate to UAT org"
+
+          - script: |
+              git fetch --all
+              git checkout "$(FEATURE_BRANCH)" || {
+                echo "ERROR: Branch $(FEATURE_BRANCH) not found. Run the Generator pipeline first."
+                exit 1
+              }
+              PKG="$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_package.xml"
+              [[ ! -f "$PKG" ]] && { echo "ERROR: Package not found: $PKG"; exit 1; }
+              echo "##vso[task.setvariable variable=PACKAGE_XML]$PKG"
+
+              TC="$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_TestClass.txt"
+              if [[ -f "$TC" && -s "$TC" ]]; then
+                TESTS=$(paste -sd ' ' "$TC")
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]$TESTS"
+                echo "Test level: RunSpecifiedTests | Classes: $TESTS"
+              else
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]"
+                echo "Test level: RunLocalTests (no TestClass.txt found)"
+              fi
+            displayName: "Checkout branch, resolve package & test classes"
+
+          - script: |
+              CMD=(sf project deploy validate \
+                --manifest "$(PACKAGE_XML)" \
+                --target-org "$(SF_ALIAS)" \
+                --test-level "$(TEST_LEVEL)" \
+                --wait 30 \
+                --ignore-warnings \
+                --verbose)
+              if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
+                CMD+=(--tests $(TEST_CLASSES))
+              fi
+              echo "Running: ${CMD[@]}"
+              "${CMD[@]}"
+            displayName: "Validate against UAT org"
+
+          - script: rm -f server.key
+            displayName: "Cleanup JWT key"
+            condition: always()
+
+# ── STAGE 3: feature/uat_DD_MM_YYYY → PROD org ─────────────────────────────────
+  - stage: Validate_UAT_To_PROD
+    displayName: "Validate UAT → PROD org"
+    dependsOn: Validate_QA_To_UAT
+    condition: succeeded()
+    jobs:
+      - job: Validate_UAT_PROD
+        displayName: "feature/uat branch → PROD org"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - script: |
+              DATE="${{ parameters.customDate }}"
+              [[ -z "$DATE" ]] && DATE=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              BRANCH="feature/uat_${DATE}"
+              echo "##vso[task.setvariable variable=FEATURE_BRANCH]$BRANCH"
+              echo "Feature branch: $BRANCH"
+            displayName: "Compute branch name"
+
+          - task: NodeTool@0
+            displayName: "Setup Node.js"
+            inputs:
+              versionSpec: "20.x"
+
+          - script: |
+              npm install -g @salesforce/cli@latest
+              sf --version
+            displayName: "Install Salesforce CLI"
+
+          - script: |
+              echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
+              chmod 600 server.key
+            displayName: "Generate JWT key"
+
+          - script: |
+              sf org logout --all --no-prompt || true
+            displayName: "Clear prior Salesforce sessions"
+
+          - script: |
+              sf org login jwt \
+                --client-id "$(SALESFORCE_CONSUMER_KEY_PROD)" \
+                --jwt-key-file server.key \
+                --username "$(SFDX_AUTH_PROD_USERNAME)" \
+                --instance-url "$(LOGIN_URL)" \
+                --alias "$(SF_ALIAS)" \
+                --set-default
+            displayName: "Authenticate to PROD org"
+
+          - script: |
+              git fetch --all
+              git checkout "$(FEATURE_BRANCH)" || {
+                echo "ERROR: Branch $(FEATURE_BRANCH) not found. Run the Generator pipeline first."
+                exit 1
+              }
+              PKG="$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_package.xml"
+              [[ ! -f "$PKG" ]] && { echo "ERROR: Package not found: $PKG"; exit 1; }
+              echo "##vso[task.setvariable variable=PACKAGE_XML]$PKG"
+
+              TC="$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_TestClass.txt"
+              if [[ -f "$TC" && -s "$TC" ]]; then
+                TESTS=$(paste -sd ' ' "$TC")
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]$TESTS"
+                echo "Test level: RunSpecifiedTests | Classes: $TESTS"
+              else
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]"
+                echo "Test level: RunLocalTests (no TestClass.txt found)"
+              fi
+            displayName: "Checkout branch, resolve package & test classes"
+
+          - script: |
+              CMD=(sf project deploy validate \
+                --manifest "$(PACKAGE_XML)" \
+                --target-org "$(SF_ALIAS)" \
+                --test-level "$(TEST_LEVEL)" \
+                --wait 60 \
+                --ignore-warnings \
+                --verbose)
+              if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
+                CMD+=(--tests $(TEST_CLASSES))
+              fi
+              echo "Running: ${CMD[@]}"
+              "${CMD[@]}"
+            displayName: "Validate against PROD org"
+
+          - script: rm -f server.key
+            displayName: "Cleanup JWT key"
+            condition: always()

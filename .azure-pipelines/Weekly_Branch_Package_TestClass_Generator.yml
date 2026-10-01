@@ -1,0 +1,258 @@
+name: RCPL Weekly Branch, Package & TestClass Generator
+
+# Runs every Saturday at 10:00 PM IST (16:30 UTC)
+# Creates feature branches and generates delta artifacts:
+#   manifest/feature/<env>_DD_MM_YYYY_package.xml
+#   manifest/feature/<env>_DD_MM_YYYY_TestClass.txt  (ApexClass members only)
+#
+# Promotion flow:  dev -> QA org  |  QA -> UAT org  |  UAT -> PROD org
+
+schedules:
+  - cron: "30 16 * * 6"
+    displayName: "Weekly Saturday - Branch, Package & TestClass Generator"
+    branches:
+      include:
+        - dev
+    always: true
+
+trigger: none
+
+parameters:
+  - name: manualRun
+    type: boolean
+    displayName: "Manual Run"
+    default: false
+  - name: customDate
+    type: string
+    displayName: "Custom date suffix (DD_MM_YYYY) - leave blank to use today"
+    default: ""
+
+variables:
+  - group: RCPL-Salesforce-Secrets
+  - name: API_VERSION
+    value: "67.0"
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+
+# ── STAGE 1: feature/dev_DD_MM_YYYY  (diff: dev vs QA) ─────────────────────────
+  - stage: Generate_Dev
+    displayName: "Dev - feature/dev branch + artifacts"
+    jobs:
+      - job: Gen_Dev
+        displayName: "Create feature/dev branch, package & test classes"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            persistCredentials: true
+
+          - script: |
+              DATE="${{ parameters.customDate }}"
+              if [[ -z "$DATE" ]]; then
+                DATE=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              fi
+              BRANCH="feature/dev_${DATE}"
+              echo "##vso[task.setvariable variable=FEATURE_BRANCH]$BRANCH"
+              echo "Branch: $BRANCH"
+            displayName: "Compute branch name"
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git fetch --all
+              git checkout dev && git pull origin dev
+              if git ls-remote --exit-code --heads origin "$(FEATURE_BRANCH)" > /dev/null 2>&1; then
+                git checkout "$(FEATURE_BRANCH)" && git pull origin "$(FEATURE_BRANCH)"
+              else
+                git checkout -b "$(FEATURE_BRANCH)"
+                git push origin "$(FEATURE_BRANCH)"
+              fi
+            displayName: "Create/checkout feature/dev branch"
+
+          - script: |
+              git fetch --all
+              CHANGED=$(git diff --name-only origin/QA...origin/dev -- force-app/ 2>/dev/null || \
+                        git diff --name-only origin/QA origin/dev -- force-app/ 2>/dev/null || echo "")
+              echo "Changed files:"
+              echo "$CHANGED"
+              echo "$CHANGED" > /tmp/changed_files.txt
+            displayName: "Compute diff: dev vs QA"
+
+          - script: |
+              if [[ ! -s /tmp/changed_files.txt ]]; then
+                echo "No changes between dev and QA - copying full package as fallback"
+                mkdir -p "$(Build.SourcesDirectory)/manifest/feature"
+                cp "$(Build.SourcesDirectory)/manifest/package.xml" \
+                   "$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_package.xml"
+              else
+                python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
+              fi
+            displayName: "Generate package.xml & TestClass.txt"
+            env:
+              FEATURE_BRANCH: $(FEATURE_BRANCH)
+              BUILD_SOURCES:  $(Build.SourcesDirectory)
+              API_VERSION:    $(API_VERSION)
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git checkout "$(FEATURE_BRANCH)"
+              git add "manifest/$(FEATURE_BRANCH)_package.xml" 2>/dev/null || true
+              git add "manifest/$(FEATURE_BRANCH)_TestClass.txt" 2>/dev/null || true
+              if git diff --cached --quiet; then
+                echo "Nothing new to commit"
+              else
+                git commit -m "chore: auto-generate artifacts for $(FEATURE_BRANCH) [skip ci]"
+                git push origin "$(FEATURE_BRANCH)"
+              fi
+            displayName: "Commit & push artifacts to feature/dev branch"
+
+# ── STAGE 2: feature/qa_DD_MM_YYYY  (diff: QA vs UAT) ──────────────────────────
+  - stage: Generate_QA
+    displayName: "QA - feature/qa branch + artifacts"
+    dependsOn: Generate_Dev
+    condition: succeeded()
+    jobs:
+      - job: Gen_QA
+        displayName: "Create feature/qa branch, package & test classes"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            persistCredentials: true
+
+          - script: |
+              DATE="${{ parameters.customDate }}"
+              if [[ -z "$DATE" ]]; then
+                DATE=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              fi
+              BRANCH="feature/qa_${DATE}"
+              echo "##vso[task.setvariable variable=FEATURE_BRANCH]$BRANCH"
+              echo "Branch: $BRANCH"
+            displayName: "Compute branch name"
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git fetch --all
+              git checkout QA && git pull origin QA
+              if git ls-remote --exit-code --heads origin "$(FEATURE_BRANCH)" > /dev/null 2>&1; then
+                git checkout "$(FEATURE_BRANCH)" && git pull origin "$(FEATURE_BRANCH)"
+              else
+                git checkout -b "$(FEATURE_BRANCH)"
+                git push origin "$(FEATURE_BRANCH)"
+              fi
+            displayName: "Create/checkout feature/qa branch"
+
+          - script: |
+              git fetch --all
+              CHANGED=$(git diff --name-only origin/UAT...origin/QA -- force-app/ 2>/dev/null || \
+                        git diff --name-only origin/UAT origin/QA -- force-app/ 2>/dev/null || echo "")
+              echo "Changed files:"
+              echo "$CHANGED"
+              echo "$CHANGED" > /tmp/changed_files.txt
+            displayName: "Compute diff: QA vs UAT"
+
+          - script: |
+              if [[ ! -s /tmp/changed_files.txt ]]; then
+                echo "No changes between QA and UAT - copying full package as fallback"
+                mkdir -p "$(Build.SourcesDirectory)/manifest/feature"
+                cp "$(Build.SourcesDirectory)/manifest/package.xml" \
+                   "$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_package.xml"
+              else
+                python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
+              fi
+            displayName: "Generate package.xml & TestClass.txt"
+            env:
+              FEATURE_BRANCH: $(FEATURE_BRANCH)
+              BUILD_SOURCES:  $(Build.SourcesDirectory)
+              API_VERSION:    $(API_VERSION)
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git checkout "$(FEATURE_BRANCH)"
+              git add "manifest/$(FEATURE_BRANCH)_package.xml" 2>/dev/null || true
+              git add "manifest/$(FEATURE_BRANCH)_TestClass.txt" 2>/dev/null || true
+              if git diff --cached --quiet; then
+                echo "Nothing new to commit"
+              else
+                git commit -m "chore: auto-generate artifacts for $(FEATURE_BRANCH) [skip ci]"
+                git push origin "$(FEATURE_BRANCH)"
+              fi
+            displayName: "Commit & push artifacts to feature/qa branch"
+
+# ── STAGE 3: feature/uat_DD_MM_YYYY  (diff: UAT vs master) ─────────────────────
+  - stage: Generate_UAT
+    displayName: "UAT - feature/uat branch + artifacts"
+    dependsOn: Generate_QA
+    condition: succeeded()
+    jobs:
+      - job: Gen_UAT
+        displayName: "Create feature/uat branch, package & test classes"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            persistCredentials: true
+
+          - script: |
+              DATE="${{ parameters.customDate }}"
+              if [[ -z "$DATE" ]]; then
+                DATE=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+              fi
+              BRANCH="feature/uat_${DATE}"
+              echo "##vso[task.setvariable variable=FEATURE_BRANCH]$BRANCH"
+              echo "Branch: $BRANCH"
+            displayName: "Compute branch name"
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git fetch --all
+              git checkout UAT && git pull origin UAT
+              if git ls-remote --exit-code --heads origin "$(FEATURE_BRANCH)" > /dev/null 2>&1; then
+                git checkout "$(FEATURE_BRANCH)" && git pull origin "$(FEATURE_BRANCH)"
+              else
+                git checkout -b "$(FEATURE_BRANCH)"
+                git push origin "$(FEATURE_BRANCH)"
+              fi
+            displayName: "Create/checkout feature/uat branch"
+
+          - script: |
+              git fetch --all
+              CHANGED=$(git diff --name-only origin/master...origin/UAT -- force-app/ 2>/dev/null || \
+                        git diff --name-only origin/master origin/UAT -- force-app/ 2>/dev/null || echo "")
+              echo "Changed files:"
+              echo "$CHANGED"
+              echo "$CHANGED" > /tmp/changed_files.txt
+            displayName: "Compute diff: UAT vs master"
+
+          - script: |
+              if [[ ! -s /tmp/changed_files.txt ]]; then
+                echo "No changes between UAT and master - copying full package as fallback"
+                mkdir -p "$(Build.SourcesDirectory)/manifest/feature"
+                cp "$(Build.SourcesDirectory)/manifest/package.xml" \
+                   "$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_package.xml"
+              else
+                python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
+              fi
+            displayName: "Generate package.xml & TestClass.txt"
+            env:
+              FEATURE_BRANCH: $(FEATURE_BRANCH)
+              BUILD_SOURCES:  $(Build.SourcesDirectory)
+              API_VERSION:    $(API_VERSION)
+
+          - script: |
+              git config user.email "$(GIT_USER_EMAIL)"
+              git config user.name  "$(GIT_USER_NAME)"
+              git checkout "$(FEATURE_BRANCH)"
+              git add "manifest/$(FEATURE_BRANCH)_package.xml" 2>/dev/null || true
+              git add "manifest/$(FEATURE_BRANCH)_TestClass.txt" 2>/dev/null || true
+              if git diff --cached --quiet; then
+                echo "Nothing new to commit"
+              else
+                git commit -m "chore: auto-generate artifacts for $(FEATURE_BRANCH) [skip ci]"
+                git push origin "$(FEATURE_BRANCH)"
+              fi
+            displayName: "Commit & push artifacts to feature/uat branch"
