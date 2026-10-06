@@ -154,24 +154,9 @@ stages:
             displayName: "Deploy Validate against QA Org"
 
           - script: |
-              if [[ -n "$(TEST_RUN_ID)" ]]; then
-                sf apex get test \
-                  --test-run-id "$(TEST_RUN_ID)" \
-                  --target-org "$(SF_ALIAS)" \
-                  --result-format json \
-                  --output-dir "$(Build.SourcesDirectory)/test-results" \
-                  --code-coverage || true
-                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "$(TEST_RUN_ID).json" | head -1)
-              fi
-              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "*.json" | head -1)
-              fi
-              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-                echo "WARNING: No coverage result file found - skipping coverage check"
-                exit 0
-              fi
-              echo "Running per-class coverage check (85% threshold) on: $RESULT_JSON"
-              python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
+              echo "Fetching coverage directly from org via SOQL..."
+              python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+                --soql "$(SF_ALIAS)"
             displayName: "Check 85% Per-Class Apex Code Coverage"
 
           - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
@@ -293,24 +278,9 @@ stages:
             displayName: "Deploy Validate against UAT Org"
 
           - script: |
-              if [[ -n "$(TEST_RUN_ID)" ]]; then
-                sf apex get test \
-                  --test-run-id "$(TEST_RUN_ID)" \
-                  --target-org "$(SF_ALIAS)" \
-                  --result-format json \
-                  --output-dir "$(Build.SourcesDirectory)/test-results" \
-                  --code-coverage || true
-                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "$(TEST_RUN_ID).json" | head -1)
-              fi
-              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "*.json" | head -1)
-              fi
-              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-                echo "WARNING: No coverage result file found - skipping coverage check"
-                exit 0
-              fi
-              echo "Running per-class coverage check (85% threshold) on: $RESULT_JSON"
-              python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
+              echo "Fetching coverage directly from org via SOQL..."
+              python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+                --soql "$(SF_ALIAS)"
             displayName: "Check 85% Per-Class Apex Code Coverage"
 
           - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
@@ -432,24 +402,9 @@ stages:
             displayName: "Deploy Validate against PROD Org"
 
           - script: |
-              if [[ -n "$(TEST_RUN_ID)" ]]; then
-                sf apex get test \
-                  --test-run-id "$(TEST_RUN_ID)" \
-                  --target-org "$(SF_ALIAS)" \
-                  --result-format json \
-                  --output-dir "$(Build.SourcesDirectory)/test-results" \
-                  --code-coverage || true
-                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "$(TEST_RUN_ID).json" | head -1)
-              fi
-              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "*.json" | head -1)
-              fi
-              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-                echo "WARNING: No coverage result file found - skipping coverage check"
-                exit 0
-              fi
-              echo "Running per-class coverage check (85% threshold) on: $RESULT_JSON"
-              python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
+              echo "Fetching coverage directly from org via SOQL..."
+              python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+                --soql "$(SF_ALIAS)"
             displayName: "Check 85% Per-Class Apex Code Coverage"
 
           - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"

@@ -156,8 +156,6 @@ jobs:
             --test-level "$(TEST_LEVEL)" \
             --wait 30 \
             --ignore-warnings \
-            --coverage-formatters json \
-            --results-dir "$(Build.SourcesDirectory)/test-results" \
             --verbose)
           if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
             CMD+=(--tests $(TEST_CLASSES))
@@ -192,8 +190,10 @@ jobs:
             echo "WARNING: No coverage result file found - skipping coverage check"
             exit 0
           fi
-          echo "Running per-class coverage check (85% threshold) on: $RESULT_JSON"
-          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
+      - script: |
+          echo "Fetching coverage directly from org via SOQL..."
+          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+            --soql "$(SF_USERNAME)"
         displayName: "Check 85% Per-Class Coverage (Post-Validation)"
         condition: and(succeeded(), ne('${{ parameters.testlevel }}', 'NoTestRun'))
 
@@ -205,9 +205,7 @@ jobs:
             --target-org "$(SF_USERNAME)" \
             --test-level "$(TEST_LEVEL)" \
             --wait 30 \
-            --ignore-conflicts \
-            --coverage-formatters json \
-            --results-dir "$(Build.SourcesDirectory)/deploy-results")
+            --ignore-conflicts)
           if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
             CMD+=(--tests $(TEST_CLASSES))
           fi
@@ -241,8 +239,10 @@ jobs:
             echo "WARNING: No coverage result file found - skipping coverage check"
             exit 0
           fi
-          echo "Running per-class coverage check (85% threshold) on: $RESULT_JSON"
-          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
+      - script: |
+          echo "Fetching coverage directly from org via SOQL..."
+          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+            --soql "$(SF_USERNAME)"
         displayName: "Check 85% Per-Class Coverage (Post-Deployment)"
         condition: and(succeeded(), ne('${{ parameters.testlevel }}', 'NoTestRun'))
 

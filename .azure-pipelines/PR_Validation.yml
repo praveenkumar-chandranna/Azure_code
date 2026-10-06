@@ -212,8 +212,6 @@ jobs:
             --wait 60 \
             --ignore-warnings \
             --test-level "$(TEST_LEVEL)" \
-            --coverage-formatters json \
-            --results-dir "$(Build.SourcesDirectory)/test-results" \
             --verbose)
           if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && ${#tests_array[@]} -gt 0 ]]; then
             CMD+=(--tests)
@@ -223,7 +221,7 @@ jobs:
           "${CMD[@]}" | tee deploy-result.txt
           VALIDATION_EXIT_CODE=${PIPESTATUS[0]}
           set -e
-          TEST_RUN_ID=$(grep -oP '(?<=Test Run Id: )\w+' deploy-result.txt | head -1 || true)
+          TEST_RUN_ID=$(grep -oP '(?<=Test Run Id: |testRunId": "|AsyncApexJobId": ")\w+' deploy-result.txt | head -1 || true)
           echo "##vso[task.setvariable variable=TEST_RUN_ID]$TEST_RUN_ID"
           if [[ "$VALIDATION_EXIT_CODE" != "0" ]]; then
             echo "VALIDATION FAILED"
@@ -234,24 +232,9 @@ jobs:
         displayName: "Validate Deployment against Target Org"
 
       - script: |
-          if [[ -n "$(TEST_RUN_ID)" ]]; then
-            sf apex get test \
-              --test-run-id "$(TEST_RUN_ID)" \
-              --target-org "$(SF_USERNAME)" \
-              --result-format json \
-              --output-dir "$(Build.SourcesDirectory)/test-results" \
-              --code-coverage || true
-            RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "$(TEST_RUN_ID).json" | head -1)
-          fi
-          if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-            RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "*.json" | head -1)
-          fi
-          if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-            echo "WARNING: No coverage result file found - skipping per-class coverage check"
-            exit 0
-          fi
-          echo "Running per-class coverage check (85% threshold) on: $RESULT_JSON"
-          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
+          echo "Fetching coverage directly from org via SOQL..."
+          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+            --soql "$(SF_USERNAME)"
         displayName: "Check 85% Per-Class Apex Code Coverage"
 
       - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
