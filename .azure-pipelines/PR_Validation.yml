@@ -67,10 +67,14 @@ jobs:
           sf --version
         displayName: "Install Salesforce CLI"
 
-      - script: |
-          echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
-          chmod 600 server.key
-        displayName: "Generate JWT Key File"
+      - task: DownloadSecureFile@1
+        name: jwtKey
+        displayName: "Download JWT Key Secure File"
+        inputs:
+          secureFile: "server.key"
+
+      - script: chmod 600 "$(jwtKey.secureFilePath)"
+        displayName: "Set JWT Key Permissions"
 
       - script: |
           SOURCE_BRANCH="$(System.PullRequest.SourceBranch)"
@@ -123,7 +127,7 @@ jobs:
       - script: |
           sf org login jwt \
             --client-id "$(SF_CLIENT_ID)" \
-            --jwt-key-file server.key \
+            --jwt-key-file "$(jwtKey.secureFilePath)" \
             --username "$(SF_USERNAME)" \
             --instance-url "$(SF_INSTANCE_URL)" \
             --set-default
@@ -250,6 +254,6 @@ jobs:
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
         displayName: "Check 85% Per-Class Apex Code Coverage"
 
-      - script: rm -f server.key
-        displayName: "Remove JWT Key File"
+      - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+        displayName: "JWT Key Cleanup"
         condition: always()

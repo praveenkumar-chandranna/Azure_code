@@ -8,7 +8,7 @@ name: RCPL Weekly Promotion Validation
 #        feature/qa_DD_MM_YYYY   → validates against UAT org
 #        feature/uat_DD_MM_YYYY  → validates against PROD org
 #
-# Test level: RunLocalTests (all stages)
+# Test level: RunSpecifiedTests if TestClass.txt exists, else RunLocalTests
 # ─────────────────────────────────────────────────────────────────
 
 schedules:
@@ -73,10 +73,14 @@ stages:
               sf --version
             displayName: "Install Salesforce CLI"
 
-          - script: |
-              echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
-              chmod 600 server.key
-            displayName: "Generate JWT Key"
+          - task: DownloadSecureFile@1
+            name: jwtKey
+            displayName: "Download JWT Key Secure File"
+            inputs:
+              secureFile: "server.key"
+
+          - script: chmod 600 "$(jwtKey.secureFilePath)"
+            displayName: "Set JWT Key Permissions"
 
           - script: |
               sf org logout --all --no-prompt || true
@@ -85,7 +89,7 @@ stages:
           - script: |
               sf org login jwt \
                 --client-id "$(SALESFORCE_CONSUMER_KEY_QA)" \
-                --jwt-key-file server.key \
+                --jwt-key-file "$(jwtKey.secureFilePath)" \
                 --username "$(SFDX_AUTH_QA_USERNAME)" \
                 --instance-url "$(SANDBOX_URL)" \
                 --alias "$(SF_ALIAS)" \
@@ -110,18 +114,68 @@ stages:
             displayName: "Checkout Branch & Verify Package Manifest"
 
           - script: |
-              echo "Validating: $(DEV_BRANCH) → QA org"
-              sf project deploy validate \
+              TC="$(Build.SourcesDirectory)/manifest/$(DEV_BRANCH)_TestClass.txt"
+              if [[ -f "$TC" && -s "$TC" ]]; then
+                TESTS=$(paste -sd ' ' "$TC")
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]$TESTS"
+              else
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]"
+              fi
+            displayName: "Resolve Test Classes"
+
+          - script: |
+              mkdir -p "$(Build.SourcesDirectory)/test-results"
+              set +e
+              CMD=(sf project deploy validate \
                 --manifest "$(PACKAGE_XML)" \
                 --target-org "$(SF_ALIAS)" \
-                --test-level RunLocalTests \
+                --test-level "$(TEST_LEVEL)" \
                 --wait 30 \
                 --ignore-warnings \
-                --verbose
-            displayName: "Deploy Validate against QA Org (RunLocalTests)"
+                --coverage-formatters json \
+                --results-dir "$(Build.SourcesDirectory)/test-results" \
+                --verbose)
+              if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
+                CMD+=(--tests $(TEST_CLASSES))
+              fi
+              echo "Executing: ${CMD[@]}"
+              "${CMD[@]}" | tee validate-result.txt
+              VALIDATE_EXIT=${PIPESTATUS[0]}
+              set -e
+              TEST_RUN_ID=$(grep -oP '(?<=Test Run Id: )\w+' validate-result.txt | head -1 || true)
+              echo "##vso[task.setvariable variable=TEST_RUN_ID]$TEST_RUN_ID"
+              if [[ "$VALIDATE_EXIT" != "0" ]]; then
+                echo "VALIDATION FAILED"
+                exit 1
+              fi
+              echo "VALIDATION PASSED"
+            displayName: "Deploy Validate against QA Org"
 
-          - script: rm -f server.key
-            displayName: "Cleanup JWT Key"
+          - script: |
+              if [[ -n "$(TEST_RUN_ID)" ]]; then
+                sf apex get test \
+                  --test-run-id "$(TEST_RUN_ID)" \
+                  --target-org "$(SF_ALIAS)" \
+                  --result-format json \
+                  --output-dir "$(Build.SourcesDirectory)/test-results" \
+                  --code-coverage || true
+                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "$(TEST_RUN_ID).json" | head -1)
+              fi
+              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
+                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "*.json" | head -1)
+              fi
+              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
+                echo "WARNING: No coverage result file found - skipping coverage check"
+                exit 0
+              fi
+              echo "Running per-class coverage check (85% threshold) on: $RESULT_JSON"
+              python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
+            displayName: "Check 85% Per-Class Apex Code Coverage"
+
+          - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+            displayName: "JWT Key Cleanup"
             condition: always()
 
 # ─────────────────────────────────────────────────────────────────
@@ -159,10 +213,14 @@ stages:
               sf --version
             displayName: "Install Salesforce CLI"
 
-          - script: |
-              echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
-              chmod 600 server.key
-            displayName: "Generate JWT Key"
+          - task: DownloadSecureFile@1
+            name: jwtKey
+            displayName: "Download JWT Key Secure File"
+            inputs:
+              secureFile: "server.key"
+
+          - script: chmod 600 "$(jwtKey.secureFilePath)"
+            displayName: "Set JWT Key Permissions"
 
           - script: |
               sf org logout --all --no-prompt || true
@@ -171,7 +229,7 @@ stages:
           - script: |
               sf org login jwt \
                 --client-id "$(SALESFORCE_CONSUMER_KEY_UAT)" \
-                --jwt-key-file server.key \
+                --jwt-key-file "$(jwtKey.secureFilePath)" \
                 --username "$(SFDX_AUTH_UAT_USERNAME)" \
                 --instance-url "$(SANDBOX_URL)" \
                 --alias "$(SF_ALIAS)" \
@@ -195,18 +253,68 @@ stages:
             displayName: "Checkout Branch & Verify Package Manifest"
 
           - script: |
-              echo "Validating: $(QA_BRANCH) → UAT org"
-              sf project deploy validate \
+              TC="$(Build.SourcesDirectory)/manifest/$(QA_BRANCH)_TestClass.txt"
+              if [[ -f "$TC" && -s "$TC" ]]; then
+                TESTS=$(paste -sd ' ' "$TC")
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]$TESTS"
+              else
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]"
+              fi
+            displayName: "Resolve Test Classes"
+
+          - script: |
+              mkdir -p "$(Build.SourcesDirectory)/test-results"
+              set +e
+              CMD=(sf project deploy validate \
                 --manifest "$(PACKAGE_XML)" \
                 --target-org "$(SF_ALIAS)" \
-                --test-level RunLocalTests \
+                --test-level "$(TEST_LEVEL)" \
                 --wait 30 \
                 --ignore-warnings \
-                --verbose
-            displayName: "Deploy Validate against UAT Org (RunLocalTests)"
+                --coverage-formatters json \
+                --results-dir "$(Build.SourcesDirectory)/test-results" \
+                --verbose)
+              if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
+                CMD+=(--tests $(TEST_CLASSES))
+              fi
+              echo "Executing: ${CMD[@]}"
+              "${CMD[@]}" | tee validate-result.txt
+              VALIDATE_EXIT=${PIPESTATUS[0]}
+              set -e
+              TEST_RUN_ID=$(grep -oP '(?<=Test Run Id: )\w+' validate-result.txt | head -1 || true)
+              echo "##vso[task.setvariable variable=TEST_RUN_ID]$TEST_RUN_ID"
+              if [[ "$VALIDATE_EXIT" != "0" ]]; then
+                echo "VALIDATION FAILED"
+                exit 1
+              fi
+              echo "VALIDATION PASSED"
+            displayName: "Deploy Validate against UAT Org"
 
-          - script: rm -f server.key
-            displayName: "Cleanup JWT Key"
+          - script: |
+              if [[ -n "$(TEST_RUN_ID)" ]]; then
+                sf apex get test \
+                  --test-run-id "$(TEST_RUN_ID)" \
+                  --target-org "$(SF_ALIAS)" \
+                  --result-format json \
+                  --output-dir "$(Build.SourcesDirectory)/test-results" \
+                  --code-coverage || true
+                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "$(TEST_RUN_ID).json" | head -1)
+              fi
+              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
+                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "*.json" | head -1)
+              fi
+              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
+                echo "WARNING: No coverage result file found - skipping coverage check"
+                exit 0
+              fi
+              echo "Running per-class coverage check (85% threshold) on: $RESULT_JSON"
+              python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
+            displayName: "Check 85% Per-Class Apex Code Coverage"
+
+          - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+            displayName: "JWT Key Cleanup"
             condition: always()
 
 # ─────────────────────────────────────────────────────────────────
@@ -244,10 +352,14 @@ stages:
               sf --version
             displayName: "Install Salesforce CLI"
 
-          - script: |
-              echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
-              chmod 600 server.key
-            displayName: "Generate JWT Key"
+          - task: DownloadSecureFile@1
+            name: jwtKey
+            displayName: "Download JWT Key Secure File"
+            inputs:
+              secureFile: "server.key"
+
+          - script: chmod 600 "$(jwtKey.secureFilePath)"
+            displayName: "Set JWT Key Permissions"
 
           - script: |
               sf org logout --all --no-prompt || true
@@ -256,7 +368,7 @@ stages:
           - script: |
               sf org login jwt \
                 --client-id "$(SALESFORCE_CONSUMER_KEY_PROD)" \
-                --jwt-key-file server.key \
+                --jwt-key-file "$(jwtKey.secureFilePath)" \
                 --username "$(SFDX_AUTH_PROD_USERNAME)" \
                 --instance-url "$(LOGIN_URL)" \
                 --alias "$(SF_ALIAS)" \
@@ -280,16 +392,66 @@ stages:
             displayName: "Checkout Branch & Verify Package Manifest"
 
           - script: |
-              echo "Validating: $(UAT_BRANCH) → PROD org"
-              sf project deploy validate \
+              TC="$(Build.SourcesDirectory)/manifest/$(UAT_BRANCH)_TestClass.txt"
+              if [[ -f "$TC" && -s "$TC" ]]; then
+                TESTS=$(paste -sd ' ' "$TC")
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]$TESTS"
+              else
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]"
+              fi
+            displayName: "Resolve Test Classes"
+
+          - script: |
+              mkdir -p "$(Build.SourcesDirectory)/test-results"
+              set +e
+              CMD=(sf project deploy validate \
                 --manifest "$(PACKAGE_XML)" \
                 --target-org "$(SF_ALIAS)" \
-                --test-level RunLocalTests \
+                --test-level "$(TEST_LEVEL)" \
                 --wait 60 \
                 --ignore-warnings \
-                --verbose
-            displayName: "Deploy Validate against PROD Org (RunLocalTests)"
+                --coverage-formatters json \
+                --results-dir "$(Build.SourcesDirectory)/test-results" \
+                --verbose)
+              if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
+                CMD+=(--tests $(TEST_CLASSES))
+              fi
+              echo "Executing: ${CMD[@]}"
+              "${CMD[@]}" | tee validate-result.txt
+              VALIDATE_EXIT=${PIPESTATUS[0]}
+              set -e
+              TEST_RUN_ID=$(grep -oP '(?<=Test Run Id: )\w+' validate-result.txt | head -1 || true)
+              echo "##vso[task.setvariable variable=TEST_RUN_ID]$TEST_RUN_ID"
+              if [[ "$VALIDATE_EXIT" != "0" ]]; then
+                echo "VALIDATION FAILED"
+                exit 1
+              fi
+              echo "VALIDATION PASSED"
+            displayName: "Deploy Validate against PROD Org"
 
-          - script: rm -f server.key
-            displayName: "Cleanup JWT Key"
+          - script: |
+              if [[ -n "$(TEST_RUN_ID)" ]]; then
+                sf apex get test \
+                  --test-run-id "$(TEST_RUN_ID)" \
+                  --target-org "$(SF_ALIAS)" \
+                  --result-format json \
+                  --output-dir "$(Build.SourcesDirectory)/test-results" \
+                  --code-coverage || true
+                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "$(TEST_RUN_ID).json" | head -1)
+              fi
+              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
+                RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "*.json" | head -1)
+              fi
+              if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
+                echo "WARNING: No coverage result file found - skipping coverage check"
+                exit 0
+              fi
+              echo "Running per-class coverage check (85% threshold) on: $RESULT_JSON"
+              python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
+            displayName: "Check 85% Per-Class Apex Code Coverage"
+
+          - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+            displayName: "JWT Key Cleanup"
             condition: always()

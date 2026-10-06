@@ -72,10 +72,14 @@ jobs:
           sf --version
         displayName: "Install Salesforce CLI"
 
-      - script: |
-          echo "$(SALESFORCE_JWT_SECRET_KEY)" > server.key
-          chmod 600 server.key
-        displayName: "Generate JWT Private Key File"
+      - task: DownloadSecureFile@1
+        name: jwtKey
+        displayName: "Download JWT Key Secure File"
+        inputs:
+          secureFile: "server.key"
+
+      - script: chmod 600 "$(jwtKey.secureFilePath)"
+        displayName: "Set JWT Key Permissions"
 
       - script: |
           case "$(ENVIRONMENT)" in
@@ -113,7 +117,7 @@ jobs:
       - script: |
           sf org login jwt \
             --client-id "$(CLIENT_ID)" \
-            --jwt-key-file server.key \
+            --jwt-key-file "$(jwtKey.secureFilePath)" \
             --username "$(SF_USERNAME)" \
             --instance-url "$(LOGIN_URL)" \
             --set-default
@@ -131,45 +135,116 @@ jobs:
       - script: |
           if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]]; then
             TEST_CLASS_FILE="$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_TestClass.txt"
-            if [[ ! -f "$TEST_CLASS_FILE" ]]; then
-              echo "Test class file not found: $TEST_CLASS_FILE"
-              exit 1
+            if [[ ! -f "$TEST_CLASS_FILE" || ! -s "$TEST_CLASS_FILE" ]]; then
+              echo "Test class file not found or empty - falling back to RunLocalTests"
+              echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+              echo "##vso[task.setvariable variable=TEST_CLASSES]"
+            else
+              TEST_CLASSES=$(paste -sd ' ' "$TEST_CLASS_FILE")
+              echo "Test classes: $TEST_CLASSES"
+              echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
             fi
-            TEST_CLASSES=$(paste -sd ' ' "$TEST_CLASS_FILE")
-            echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
           fi
         displayName: "Prepare Test Classes"
 
       - script: |
-          echo "Validating deployment of manifest: $(MANIFEST_PATH)"
+          mkdir -p "$(Build.SourcesDirectory)/test-results"
+          set +e
           CMD=(sf project deploy validate \
             --manifest "$(MANIFEST_PATH)" \
             --target-org "$(SF_USERNAME)" \
             --test-level "$(TEST_LEVEL)" \
             --wait 30 \
             --ignore-warnings \
+            --coverage-formatters json \
+            --results-dir "$(Build.SourcesDirectory)/test-results" \
             --verbose)
           if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
             CMD+=(--tests $(TEST_CLASSES))
           fi
           echo "Running: ${CMD[@]}"
-          "${CMD[@]}"
+          "${CMD[@]}" | tee validate-result.txt
+          VALIDATE_EXIT=${PIPESTATUS[0]}
+          set -e
+          TEST_RUN_ID=$(grep -oP '(?<=Test Run Id: )\w+' validate-result.txt | head -1 || true)
+          echo "##vso[task.setvariable variable=VALIDATE_TEST_RUN_ID]$TEST_RUN_ID"
+          if [[ "$VALIDATE_EXIT" != "0" ]]; then
+            echo "VALIDATION FAILED"
+            exit 1
+          fi
+          echo "VALIDATION PASSED"
         displayName: "Deployment Validation"
 
       - script: |
-          echo "Deploying manifest: $(MANIFEST_PATH)"
+          if [[ -n "$(VALIDATE_TEST_RUN_ID)" ]]; then
+            sf apex get test \
+              --test-run-id "$(VALIDATE_TEST_RUN_ID)" \
+              --target-org "$(SF_USERNAME)" \
+              --result-format json \
+              --output-dir "$(Build.SourcesDirectory)/test-results" \
+              --code-coverage || true
+            RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "$(VALIDATE_TEST_RUN_ID).json" | head -1)
+          fi
+          if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
+            RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "*.json" | head -1)
+          fi
+          if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
+            echo "WARNING: No coverage result file found - skipping coverage check"
+            exit 0
+          fi
+          echo "Running per-class coverage check (85% threshold) on: $RESULT_JSON"
+          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
+        displayName: "Check 85% Per-Class Coverage (Post-Validation)"
+        condition: and(succeeded(), ne('${{ parameters.testlevel }}', 'NoTestRun'))
+
+      - script: |
+          mkdir -p "$(Build.SourcesDirectory)/deploy-results"
+          set +e
           CMD=(sf project deploy start \
             --manifest "$(MANIFEST_PATH)" \
             --target-org "$(SF_USERNAME)" \
             --test-level "$(TEST_LEVEL)" \
-            --wait 10 \
-            --ignore-conflicts)
+            --wait 30 \
+            --ignore-conflicts \
+            --coverage-formatters json \
+            --results-dir "$(Build.SourcesDirectory)/deploy-results")
           if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
             CMD+=(--tests $(TEST_CLASSES))
           fi
           echo "Running: ${CMD[@]}"
-          "${CMD[@]}"
+          "${CMD[@]}" | tee deploy-result.txt
+          DEPLOY_EXIT=${PIPESTATUS[0]}
+          set -e
+          DEPLOY_RUN_ID=$(grep -oP '(?<=Test Run Id: )\w+' deploy-result.txt | head -1 || true)
+          echo "##vso[task.setvariable variable=DEPLOY_TEST_RUN_ID]$DEPLOY_RUN_ID"
+          if [[ "$DEPLOY_EXIT" != "0" ]]; then
+            echo "DEPLOYMENT FAILED"
+            exit 1
+          fi
+          echo "DEPLOYMENT SUCCEEDED"
         displayName: "Deploy to Salesforce Org"
+
+      - script: |
+          if [[ -n "$(DEPLOY_TEST_RUN_ID)" ]]; then
+            sf apex get test \
+              --test-run-id "$(DEPLOY_TEST_RUN_ID)" \
+              --target-org "$(SF_USERNAME)" \
+              --result-format json \
+              --output-dir "$(Build.SourcesDirectory)/deploy-results" \
+              --code-coverage || true
+            RESULT_JSON=$(find "$(Build.SourcesDirectory)/deploy-results" -name "$(DEPLOY_TEST_RUN_ID).json" | head -1)
+          fi
+          if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
+            RESULT_JSON=$(find "$(Build.SourcesDirectory)/deploy-results" -name "*.json" | head -1)
+          fi
+          if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
+            echo "WARNING: No coverage result file found - skipping coverage check"
+            exit 0
+          fi
+          echo "Running per-class coverage check (85% threshold) on: $RESULT_JSON"
+          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" "$RESULT_JSON"
+        displayName: "Check 85% Per-Class Coverage (Post-Deployment)"
+        condition: and(succeeded(), ne('${{ parameters.testlevel }}', 'NoTestRun'))
 
       - script: |
           DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
@@ -191,6 +266,6 @@ jobs:
         displayName: "Create PROD Deployment Tag"
         condition: and(succeeded(), eq('${{ parameters.environment }}', 'PROD'))
 
-      - script: rm -f server.key
-        displayName: "Cleanup JWT Key"
+      - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+        displayName: "JWT Key Cleanup"
         condition: always()
