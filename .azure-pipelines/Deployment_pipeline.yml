@@ -38,7 +38,6 @@ jobs:
           ENVIRONMENT="${{ parameters.environment }}"
           SOURCE_BRANCH="${{ parameters.Feature_Branch }}"
 
-          # Map environment to target branch and previous branch for delta
           case "$ENVIRONMENT" in
             QA)
               EXPECTED_SOURCE="dev"
@@ -114,8 +113,7 @@ jobs:
           esac
         displayName: "Set Org Credentials Based on Environment"
 
-      - script: |
-          sf org logout --all --no-prompt || true
+      - script: sf org logout --all --no-prompt || true
         displayName: "Clear Prior Salesforce Sessions"
 
       - script: |
@@ -165,7 +163,7 @@ jobs:
               echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
               echo "Test classes: $TEST_CLASSES"
             else
-              echo "No Apex classes in delta - falling back to RunLocalTests"
+              echo "No test classes in delta - falling back to RunLocalTests"
               echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
               echo "##vso[task.setvariable variable=TEST_CLASSES]"
             fi
@@ -175,12 +173,16 @@ jobs:
       # ── Validate delta package ──────────────────────────────────────────────
       - script: |
           set +e
+          RESULTS_DIR="$(Build.SourcesDirectory)/test-results"
+          mkdir -p "$RESULTS_DIR"
           CMD=(sf project deploy validate \
             --manifest "$(MANIFEST_PATH)" \
             --target-org "$(SF_USERNAME)" \
             --test-level "$(TEST_LEVEL)" \
             --wait 30 \
             --ignore-warnings \
+            --coverage-formatters json \
+            --results-dir "$RESULTS_DIR" \
             --verbose)
           if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
             CMD+=(--tests $(TEST_CLASSES))
@@ -189,26 +191,23 @@ jobs:
           "${CMD[@]}"
           VALIDATE_EXIT=${PIPESTATUS[0]}
           set -e
-          if [[ "$VALIDATE_EXIT" != "0" ]]; then
-            echo "VALIDATION FAILED"
-            exit 1
-          fi
+          [[ "$VALIDATE_EXIT" != "0" ]] && { echo "VALIDATION FAILED"; exit 1; }
           echo "VALIDATION PASSED"
         displayName: "Validate Delta Deployment"
 
-      # ── Coverage check scoped to delta classes only ─────────────────────────
+      # ── Coverage check post-validation (reads from local results dir) ───────
       - script: |
           APEX_CLASSES=""
           if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
             APEX_CLASSES=$(paste -sd ',' "$(TC_PATH)")
           fi
           if [[ -z "$APEX_CLASSES" ]]; then
-            echo "No Apex classes in delta - skipping per-class coverage check"
+            echo "No test classes in delta - skipping coverage check"
             exit 0
           fi
-          echo "Checking coverage for delta classes: $APEX_CLASSES"
+          echo "Checking coverage for: $APEX_CLASSES"
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
-            --soql "$(SF_USERNAME)" \
+            --results-dir "$(Build.SourcesDirectory)/test-results" \
             --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Coverage (Post-Validation)"
         condition: and(succeeded(), ne('${{ parameters.testlevel }}', 'NoTestRun'))
@@ -229,26 +228,23 @@ jobs:
           "${CMD[@]}"
           DEPLOY_EXIT=${PIPESTATUS[0]}
           set -e
-          if [[ "$DEPLOY_EXIT" != "0" ]]; then
-            echo "DEPLOYMENT FAILED"
-            exit 1
-          fi
+          [[ "$DEPLOY_EXIT" != "0" ]] && { echo "DEPLOYMENT FAILED"; exit 1; }
           echo "DEPLOYMENT SUCCEEDED"
         displayName: "Deploy Delta to Salesforce Org"
 
-      # ── Coverage check post-deployment ──────────────────────────────────────
+      # ── Coverage check post-deployment (reads from org via SOQL) ───────────
       - script: |
           APEX_CLASSES=""
           if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
             APEX_CLASSES=$(paste -sd ',' "$(TC_PATH)")
           fi
           if [[ -z "$APEX_CLASSES" ]]; then
-            echo "No Apex classes in delta - skipping per-class coverage check"
+            echo "No test classes in delta - skipping coverage check"
             exit 0
           fi
-          echo "Checking coverage for delta classes: $APEX_CLASSES"
+          echo "Checking coverage for: $APEX_CLASSES"
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
-            --soql "$(SF_USERNAME)" \
+            --results-dir "$(Build.SourcesDirectory)/test-results" \
             --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Coverage (Post-Deployment)"
         condition: and(succeeded(), ne('${{ parameters.testlevel }}', 'NoTestRun'))

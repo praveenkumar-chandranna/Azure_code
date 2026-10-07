@@ -110,8 +110,7 @@ jobs:
           esac
         displayName: "Select Salesforce Org Based on Destination Branch"
 
-      - script: |
-          sf org logout --all --no-prompt || true
+      - script: sf org logout --all --no-prompt || true
         displayName: "Clear Prior Salesforce Sessions"
 
       - script: |
@@ -139,7 +138,6 @@ jobs:
           echo "$CHANGED"
           if [[ -z "$CHANGED" ]]; then
             echo "ERROR: No changed files detected between $(SOURCE_BRANCH) and $(DEST_BRANCH)"
-            echo "Nothing to validate - exiting"
             exit 1
           fi
           echo "$CHANGED" > /tmp/changed_files.txt
@@ -172,9 +170,9 @@ jobs:
         displayName: "Resolve Test Classes from Delta"
 
       - script: |
-          echo "Package : $(PACKAGE_PATH)"
+          echo "Package  : $(PACKAGE_PATH)"
           echo "TestLevel: $(TEST_LEVEL)"
-          echo "Classes : $(TEST_CLASSES)"
+          echo "Classes  : $(TEST_CLASSES)"
         displayName: "Display Validation Configuration"
 
       - script: |
@@ -201,6 +199,8 @@ jobs:
       # ── Validate delta package against target org ───────────────────────────
       - script: |
           set +e
+          RESULTS_DIR="$(Build.SourcesDirectory)/test-results"
+          mkdir -p "$RESULTS_DIR"
           read -ra tests_array <<< "$(TEST_CLASSES)"
           CMD=(sf project deploy validate \
             --target-org "$(SF_USERNAME)" \
@@ -208,6 +208,8 @@ jobs:
             --wait 60 \
             --ignore-warnings \
             --test-level "$(TEST_LEVEL)" \
+            --coverage-formatters json \
+            --results-dir "$RESULTS_DIR" \
             --verbose)
           if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && ${#tests_array[@]} -gt 0 ]]; then
             CMD+=(--tests)
@@ -237,7 +239,7 @@ jobs:
           fi
           echo "Checking coverage for delta classes: $APEX_CLASSES"
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
-            --soql "$(SF_USERNAME)" \
+            --results-dir "$(Build.SourcesDirectory)/test-results" \
             --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Apex Code Coverage (Delta Classes Only)"
 
