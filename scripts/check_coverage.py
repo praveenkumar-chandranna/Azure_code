@@ -2,16 +2,134 @@
 check_coverage.py
 Enforces 85% minimum code coverage per individual Apex class.
 
-Supports two input modes:
-  1. File mode  : python3 check_coverage.py <path-to-json>
-  2. SOQL mode  : python3 check_coverage.py --soql <sf-username>
-                  Queries ApexCodeCoverageAggregate directly from the org.
+Usage:
+  python3 check_coverage.py --soql <sf-username-or-alias> --classes <Class1,Class2,...>
 
 Exit codes:
   0 - all classes meet the 85% threshold
   1 - one or more classes are below threshold
-  2 - input error / no data found (treated as failure, not a bypass)
+  2 - input error / no data found
 """
+import json, sys, os, subprocess
+
+THRESHOLD = 85
+
+
+def calc_pct(covered, uncovered):
+    total = covered + uncovered
+    return 100.0 if total == 0 else (covered / total) * 100
+
+
+def print_table(coverage_list):
+    failures = []
+    print(f"\n{'Class':<60} {'Covered':>8} {'Total':>8} {'Coverage':>10}")
+    print("-" * 92)
+    for entry in coverage_list:
+        name      = entry.get("name", "Unknown")
+        covered   = int(entry.get("numLinesCovered", 0))
+        uncovered = int(entry.get("numLinesUncovered", 0))
+        pct       = calc_pct(covered, uncovered)
+        status    = "PASS" if pct >= THRESHOLD else "FAIL"
+        print(f"{name:<60} {covered:>8} {covered+uncovered:>8} {pct:>9.1f}%  {status}")
+        if pct < THRESHOLD:
+            failures.append((name, pct, covered + uncovered))
+    print("-" * 92)
+    return failures
+
+
+def load_coverage_from_soql(username, class_filter):
+    """Query ApexCodeCoverageAggregate for specific classes only."""
+    names_in = ", ".join(f"'{c.strip()}'" for c in class_filter)
+    query = (
+        f"SELECT ApexClassOrTrigger.Name, NumLinesCovered, NumLinesUncovered "
+        f"FROM ApexCodeCoverageAggregate "
+        f"WHERE ApexClassOrTrigger.Name IN ({names_in}) "
+        f"ORDER BY ApexClassOrTrigger.Name"
+    )
+    cmd = [
+        "sf", "data", "query",
+        "--query", query,
+        "--target-org", username,
+        "--result-format", "json",
+        "--use-tooling-api"
+    ]
+    print(f"Querying coverage from org '{username}' for {len(class_filter)} class(es)...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"ERROR: SOQL query failed:\n{result.stderr}")
+        sys.exit(2)
+
+    data = json.loads(result.stdout)
+    records = data.get("result", {}).get("records", [])
+
+    if not records:
+        print(f"ERROR: No coverage records found in org for classes: {class_filter}")
+        print("Ensure tests were executed and coverage data exists in the org.")
+        sys.exit(2)
+
+    # Warn about classes with no coverage record at all
+    found_names = {r.get("ApexClassOrTrigger", {}).get("Name", "") for r in records}
+    missing = [c for c in class_filter if c.strip() not in found_names]
+    if missing:
+        print(f"WARNING: No coverage record found for: {missing}")
+        print("These classes will be treated as 0% coverage.")
+        for m in missing:
+            records.append({
+                "ApexClassOrTrigger": {"Name": m.strip()},
+                "NumLinesCovered": 0,
+                "NumLinesUncovered": 1
+            })
+
+    return [
+        {
+            "name":             r.get("ApexClassOrTrigger", {}).get("Name", "Unknown"),
+            "numLinesCovered":  r.get("NumLinesCovered", 0),
+            "numLinesUncovered":r.get("NumLinesUncovered", 0),
+        }
+        for r in records
+    ]
+
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+args = sys.argv[1:]
+
+if "--soql" not in args:
+    print("Usage: python3 check_coverage.py --soql <username> --classes <Class1,Class2>")
+    sys.exit(2)
+
+soql_idx = args.index("--soql")
+if soql_idx + 1 >= len(args):
+    print("ERROR: --soql requires a username/alias argument")
+    sys.exit(2)
+username = args[soql_idx + 1]
+
+class_filter = []
+if "--classes" in args:
+    cls_idx = args.index("--classes")
+    if cls_idx + 1 >= len(args):
+        print("ERROR: --classes requires a comma-separated list of class names")
+        sys.exit(2)
+    class_filter = [c.strip() for c in args[cls_idx + 1].split(",") if c.strip()]
+
+if not class_filter:
+    print("ERROR: --classes is required - provide comma-separated Apex class names from the delta package")
+    sys.exit(2)
+
+# ── Run coverage check ────────────────────────────────────────────────────────
+coverage_list = load_coverage_from_soql(username, class_filter)
+
+print(f"Checking {len(coverage_list)} class(es) against {THRESHOLD}% threshold...")
+failures = print_table(coverage_list)
+
+if failures:
+    print(f"\nCOVERAGE CHECK FAILED - {len(failures)} class(es) below {THRESHOLD}%:")
+    for name, pct, total in failures:
+        print(f"  {name}: {pct:.1f}% ({total} lines)")
+    sys.exit(1)
+
+print(f"\nCOVERAGE CHECK PASSED - all {len(coverage_list)} class(es) meet {THRESHOLD}%")
+sys.exit(0)
+
 import json, sys, os, subprocess
 
 THRESHOLD = 85

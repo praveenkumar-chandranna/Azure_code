@@ -3,13 +3,12 @@ trigger: none
 parameters:
   - name: Feature_Branch
     type: string
-    displayName: "Package manifest to deploy (e.g. package name / branch name)"
+    displayName: "Source branch to deploy from (e.g. dev, QA, UAT, master)"
   - name: environment
     type: string
-    displayName: "Deployment environment"
-    default: SIT
+    displayName: "Target deployment environment"
+    default: QA
     values:
-      - SIT
       - QA
       - UAT
       - PROD
@@ -36,27 +35,41 @@ jobs:
     displayName: "Deployment Build"
     steps:
       - script: |
-          CURRENT_BRANCH="$(Build.SourceBranchName)"
           ENVIRONMENT="${{ parameters.environment }}"
-          echo "Branch: $CURRENT_BRANCH | Environment: $ENVIRONMENT"
+          SOURCE_BRANCH="${{ parameters.Feature_Branch }}"
+
+          # Map environment to target branch and previous branch for delta
           case "$ENVIRONMENT" in
-            SIT)   EXPECTED_BRANCH="SIT" ;;
-            QA)    EXPECTED_BRANCH="QA" ;;
-            UAT)   EXPECTED_BRANCH="UAT" ;;
-            PROD)  EXPECTED_BRANCH="master" ;;
+            QA)
+              EXPECTED_SOURCE="dev"
+              TARGET_BRANCH="QA"
+              ;;
+            UAT)
+              EXPECTED_SOURCE="QA"
+              TARGET_BRANCH="UAT"
+              ;;
+            PROD)
+              EXPECTED_SOURCE="UAT"
+              TARGET_BRANCH="master"
+              ;;
             *)
               echo "Unsupported environment: $ENVIRONMENT"
               exit 1
               ;;
           esac
-          if [[ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]]; then
-            echo "Branch '$CURRENT_BRANCH' does not match environment '$ENVIRONMENT' (expected '$EXPECTED_BRANCH')"
+
+          if [[ "$SOURCE_BRANCH" != "$EXPECTED_SOURCE" ]]; then
+            echo "ERROR: Source branch '$SOURCE_BRANCH' is not valid for environment '$ENVIRONMENT'"
+            echo "Expected source: '$EXPECTED_SOURCE'"
             exit 1
           fi
+
           echo "##vso[task.setvariable variable=ENVIRONMENT]$ENVIRONMENT"
-          echo "##vso[task.setvariable variable=FEATURE_BRANCH]${{ parameters.Feature_Branch }}"
+          echo "##vso[task.setvariable variable=SOURCE_BRANCH]$SOURCE_BRANCH"
+          echo "##vso[task.setvariable variable=TARGET_BRANCH]$TARGET_BRANCH"
           TEST_LEVEL="${{ parameters.testlevel }}"
           echo "##vso[task.setvariable variable=TEST_LEVEL]${TEST_LEVEL:-RunSpecifiedTests}"
+          echo "Delta: $SOURCE_BRANCH -> $TARGET_BRANCH ($ENVIRONMENT org)"
         displayName: "Set Environment Variables"
 
       - checkout: self
@@ -83,29 +96,20 @@ jobs:
 
       - script: |
           case "$(ENVIRONMENT)" in
-            SIT)
-              echo "##vso[task.setvariable variable=CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_SIT)"
-              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_SIT_USERNAME)"
-              echo "##vso[task.setvariable variable=LOGIN_URL]$(SANDBOX_URL)"
-              ;;
             QA)
               echo "##vso[task.setvariable variable=CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_QA)"
               echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_QA_USERNAME)"
-              echo "##vso[task.setvariable variable=LOGIN_URL]$(SANDBOX_URL)"
+              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(SANDBOX_URL)"
               ;;
             UAT)
               echo "##vso[task.setvariable variable=CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_UAT)"
               echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_UAT_USERNAME)"
-              echo "##vso[task.setvariable variable=LOGIN_URL]$(SANDBOX_URL)"
+              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(SANDBOX_URL)"
               ;;
             PROD)
               echo "##vso[task.setvariable variable=CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_PROD)"
               echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_PROD_USERNAME)"
-              echo "##vso[task.setvariable variable=LOGIN_URL]$(LOGIN_URL)"
-              ;;
-            *)
-              echo "Unsupported environment: $(ENVIRONMENT)"
-              exit 1
+              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(LOGIN_URL)"
               ;;
           esac
         displayName: "Set Org Credentials Based on Environment"
@@ -119,36 +123,57 @@ jobs:
             --client-id "$(CLIENT_ID)" \
             --jwt-key-file "$(jwtKey.secureFilePath)" \
             --username "$(SF_USERNAME)" \
-            --instance-url "$(LOGIN_URL)" \
+            --instance-url "$(SF_LOGIN_URL)" \
             --set-default
         displayName: "Authenticate to Salesforce Org"
 
+      # ── Delta package generation from git diff ──────────────────────────────
       - script: |
-          MANIFEST="$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_package.xml"
+          git fetch --all
+          echo "Computing delta: $(SOURCE_BRANCH) vs $(TARGET_BRANCH)"
+          CHANGED=$(git diff --name-only origin/$(TARGET_BRANCH)...origin/$(SOURCE_BRANCH) -- force-app/ 2>/dev/null || \
+                    git diff --name-only origin/$(TARGET_BRANCH) origin/$(SOURCE_BRANCH) -- force-app/ 2>/dev/null || echo "")
+          echo "Changed files:"
+          echo "$CHANGED"
+          if [[ -z "$CHANGED" ]]; then
+            echo "ERROR: No changed files detected between $(SOURCE_BRANCH) and $(TARGET_BRANCH)"
+            exit 1
+          fi
+          echo "$CHANGED" > /tmp/changed_files.txt
+        displayName: "Compute Delta Changed Files"
+
+      - script: |
+          python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
+          MANIFEST="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_package.xml"
+          TC_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_TestClass.txt"
           if [[ ! -f "$MANIFEST" ]]; then
-            echo "Manifest file not found: $MANIFEST"
+            echo "ERROR: Package manifest not generated: $MANIFEST"
             exit 1
           fi
           echo "##vso[task.setvariable variable=MANIFEST_PATH]$MANIFEST"
-        displayName: "Check Manifest Exists"
+          echo "##vso[task.setvariable variable=TC_PATH]$TC_PATH"
+        displayName: "Generate Delta package.xml & TestClass.txt"
+        env:
+          FEATURE_BRANCH: $(SOURCE_BRANCH)
+          BUILD_SOURCES:  $(Build.SourcesDirectory)
+          API_VERSION:    "67.0"
 
       - script: |
           if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]]; then
-            TEST_CLASS_FILE="$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_TestClass.txt"
-            if [[ ! -f "$TEST_CLASS_FILE" || ! -s "$TEST_CLASS_FILE" ]]; then
-              echo "Test class file not found or empty - falling back to RunLocalTests"
+            if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
+              TEST_CLASSES=$(paste -sd ' ' "$(TC_PATH)")
+              echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+              echo "Test classes: $TEST_CLASSES"
+            else
+              echo "No Apex classes in delta - falling back to RunLocalTests"
               echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
               echo "##vso[task.setvariable variable=TEST_CLASSES]"
-            else
-              TEST_CLASSES=$(paste -sd ' ' "$TEST_CLASS_FILE")
-              echo "Test classes: $TEST_CLASSES"
-              echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
             fi
           fi
-        displayName: "Prepare Test Classes"
+        displayName: "Resolve Test Classes from Delta"
 
+      # ── Validate delta package ──────────────────────────────────────────────
       - script: |
-          mkdir -p "$(Build.SourcesDirectory)/test-results"
           set +e
           CMD=(sf project deploy validate \
             --manifest "$(MANIFEST_PATH)" \
@@ -161,44 +186,35 @@ jobs:
             CMD+=(--tests $(TEST_CLASSES))
           fi
           echo "Running: ${CMD[@]}"
-          "${CMD[@]}" | tee validate-result.txt
+          "${CMD[@]}"
           VALIDATE_EXIT=${PIPESTATUS[0]}
           set -e
-          TEST_RUN_ID=$(grep -oP '(?<=Test Run Id: )\w+' validate-result.txt | head -1 || true)
-          echo "##vso[task.setvariable variable=VALIDATE_TEST_RUN_ID]$TEST_RUN_ID"
           if [[ "$VALIDATE_EXIT" != "0" ]]; then
             echo "VALIDATION FAILED"
             exit 1
           fi
           echo "VALIDATION PASSED"
-        displayName: "Deployment Validation"
+        displayName: "Validate Delta Deployment"
 
+      # ── Coverage check scoped to delta classes only ─────────────────────────
       - script: |
-          if [[ -n "$(VALIDATE_TEST_RUN_ID)" ]]; then
-            sf apex get test \
-              --test-run-id "$(VALIDATE_TEST_RUN_ID)" \
-              --target-org "$(SF_USERNAME)" \
-              --result-format json \
-              --output-dir "$(Build.SourcesDirectory)/test-results" \
-              --code-coverage || true
-            RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "$(VALIDATE_TEST_RUN_ID).json" | head -1)
+          APEX_CLASSES=""
+          if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
+            APEX_CLASSES=$(paste -sd ',' "$(TC_PATH)")
           fi
-          if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-            RESULT_JSON=$(find "$(Build.SourcesDirectory)/test-results" -name "*.json" | head -1)
-          fi
-          if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-            echo "WARNING: No coverage result file found - skipping coverage check"
+          if [[ -z "$APEX_CLASSES" ]]; then
+            echo "No Apex classes in delta - skipping per-class coverage check"
             exit 0
           fi
-      - script: |
-          echo "Fetching coverage directly from org via SOQL..."
+          echo "Checking coverage for delta classes: $APEX_CLASSES"
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
-            --soql "$(SF_USERNAME)"
+            --soql "$(SF_USERNAME)" \
+            --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Coverage (Post-Validation)"
         condition: and(succeeded(), ne('${{ parameters.testlevel }}', 'NoTestRun'))
 
+      # ── Deploy delta package ────────────────────────────────────────────────
       - script: |
-          mkdir -p "$(Build.SourcesDirectory)/deploy-results"
           set +e
           CMD=(sf project deploy start \
             --manifest "$(MANIFEST_PATH)" \
@@ -210,39 +226,30 @@ jobs:
             CMD+=(--tests $(TEST_CLASSES))
           fi
           echo "Running: ${CMD[@]}"
-          "${CMD[@]}" | tee deploy-result.txt
+          "${CMD[@]}"
           DEPLOY_EXIT=${PIPESTATUS[0]}
           set -e
-          DEPLOY_RUN_ID=$(grep -oP '(?<=Test Run Id: )\w+' deploy-result.txt | head -1 || true)
-          echo "##vso[task.setvariable variable=DEPLOY_TEST_RUN_ID]$DEPLOY_RUN_ID"
           if [[ "$DEPLOY_EXIT" != "0" ]]; then
             echo "DEPLOYMENT FAILED"
             exit 1
           fi
           echo "DEPLOYMENT SUCCEEDED"
-        displayName: "Deploy to Salesforce Org"
+        displayName: "Deploy Delta to Salesforce Org"
 
+      # ── Coverage check post-deployment ──────────────────────────────────────
       - script: |
-          if [[ -n "$(DEPLOY_TEST_RUN_ID)" ]]; then
-            sf apex get test \
-              --test-run-id "$(DEPLOY_TEST_RUN_ID)" \
-              --target-org "$(SF_USERNAME)" \
-              --result-format json \
-              --output-dir "$(Build.SourcesDirectory)/deploy-results" \
-              --code-coverage || true
-            RESULT_JSON=$(find "$(Build.SourcesDirectory)/deploy-results" -name "$(DEPLOY_TEST_RUN_ID).json" | head -1)
+          APEX_CLASSES=""
+          if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
+            APEX_CLASSES=$(paste -sd ',' "$(TC_PATH)")
           fi
-          if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-            RESULT_JSON=$(find "$(Build.SourcesDirectory)/deploy-results" -name "*.json" | head -1)
-          fi
-          if [[ -z "$RESULT_JSON" || ! -f "$RESULT_JSON" ]]; then
-            echo "WARNING: No coverage result file found - skipping coverage check"
+          if [[ -z "$APEX_CLASSES" ]]; then
+            echo "No Apex classes in delta - skipping per-class coverage check"
             exit 0
           fi
-      - script: |
-          echo "Fetching coverage directly from org via SOQL..."
+          echo "Checking coverage for delta classes: $APEX_CLASSES"
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
-            --soql "$(SF_USERNAME)"
+            --soql "$(SF_USERNAME)" \
+            --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Coverage (Post-Deployment)"
         condition: and(succeeded(), ne('${{ parameters.testlevel }}', 'NoTestRun'))
 
@@ -262,7 +269,7 @@ jobs:
           TAG_NAME="PROD_${DATE_SUFFIX}_${NEXT_VERSION}"
           git tag -a "$TAG_NAME" -m "PROD deployment ${NEXT_VERSION} on $(TZ='Asia/Kolkata' date +'%d-%m-%Y') via Azure DevOps"
           git push origin "$TAG_NAME"
-          echo "Tag created and pushed: $TAG_NAME"
+          echo "Tag created: $TAG_NAME"
         displayName: "Create PROD Deployment Tag"
         condition: and(succeeded(), eq('${{ parameters.environment }}', 'PROD'))
 

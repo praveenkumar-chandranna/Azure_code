@@ -3,7 +3,7 @@ trigger: none
 pr:
   branches:
     include:
-      - SIT
+      - dev
       - QA
       - UAT
       - master
@@ -21,11 +21,9 @@ jobs:
       - script: |
           SOURCE_BRANCH="$(System.PullRequest.SourceBranch)"
           SOURCE_BRANCH="${SOURCE_BRANCH##refs/heads/}"
-
           echo "PR Source Branch: $SOURCE_BRANCH"
-
           if [[ "$SOURCE_BRANCH" == "master" ]]; then
-            echo "PR from 'master' branch detected - SKIPPING validation"
+            echo "PR from 'master' branch - SKIPPING validation"
             echo "##vso[task.setvariable variable=should_validate;isOutput=true]false"
           else
             echo "PR from '$SOURCE_BRANCH' - ALLOWING validation"
@@ -41,10 +39,7 @@ jobs:
     steps:
       - script: |
           echo "=========================================="
-          echo "VALIDATION SKIPPED"
-          echo "=========================================="
-          echo "PR from 'master' branch detected"
-          echo "Policy: PRs from 'master' branch bypass validation"
+          echo "VALIDATION SKIPPED - PR from master branch"
           echo "=========================================="
         displayName: "Validation Skipped"
 
@@ -81,36 +76,32 @@ jobs:
           SOURCE_BRANCH="${SOURCE_BRANCH##refs/heads/}"
           DEST_BRANCH="$(System.PullRequest.TargetBranch)"
           DEST_BRANCH="${DEST_BRANCH##refs/heads/}"
-
           echo "##vso[task.setvariable variable=SOURCE_BRANCH]$SOURCE_BRANCH"
           echo "##vso[task.setvariable variable=DEST_BRANCH]$DEST_BRANCH"
+          echo "Source: $SOURCE_BRANCH -> Target: $DEST_BRANCH"
         displayName: "Set Source and Destination Branch"
 
       - script: |
           case "$(DEST_BRANCH)" in
-            SIT)
-              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_SIT_USERNAME)"
+            dev)
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_DEV_USERNAME)"
               echo "##vso[task.setvariable variable=SF_INSTANCE_URL]$(SANDBOX_URL)"
-              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_SIT)"
-              echo "Target Org: SIT"
+              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_DEV)"
               ;;
             QA)
               echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_QA_USERNAME)"
               echo "##vso[task.setvariable variable=SF_INSTANCE_URL]$(SANDBOX_URL)"
               echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_QA)"
-              echo "Target Org: QA"
               ;;
             UAT)
               echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_UAT_USERNAME)"
               echo "##vso[task.setvariable variable=SF_INSTANCE_URL]$(SANDBOX_URL)"
               echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_UAT)"
-              echo "Target Org: UAT"
               ;;
             master)
               echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_PROD_USERNAME)"
               echo "##vso[task.setvariable variable=SF_INSTANCE_URL]$(LOGIN_URL)"
               echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_PROD)"
-              echo "Target Org: PRODUCTION"
               ;;
             *)
               echo "Invalid target branch: $(DEST_BRANCH)"
@@ -120,7 +111,6 @@ jobs:
         displayName: "Select Salesforce Org Based on Destination Branch"
 
       - script: |
-          echo "Clearing existing Salesforce org sessions..."
           sf org logout --all --no-prompt || true
         displayName: "Clear Prior Salesforce Sessions"
 
@@ -131,7 +121,6 @@ jobs:
             --username "$(SF_USERNAME)" \
             --instance-url "$(SF_INSTANCE_URL)" \
             --set-default
-
           if [[ $? -eq 0 ]]; then
             echo "Successfully authenticated with Salesforce"
           else
@@ -139,6 +128,54 @@ jobs:
             exit 1
           fi
         displayName: "Authenticate Salesforce Using JWT"
+
+      # ── Delta package generation from git diff ──────────────────────────────
+      - script: |
+          git fetch --all
+          echo "Computing delta: $(SOURCE_BRANCH) vs $(DEST_BRANCH)"
+          CHANGED=$(git diff --name-only origin/$(DEST_BRANCH)...origin/$(SOURCE_BRANCH) -- force-app/ 2>/dev/null || \
+                    git diff --name-only origin/$(DEST_BRANCH) origin/$(SOURCE_BRANCH) -- force-app/ 2>/dev/null || echo "")
+          echo "Changed files:"
+          echo "$CHANGED"
+          if [[ -z "$CHANGED" ]]; then
+            echo "ERROR: No changed files detected between $(SOURCE_BRANCH) and $(DEST_BRANCH)"
+            echo "Nothing to validate - exiting"
+            exit 1
+          fi
+          echo "$CHANGED" > /tmp/changed_files.txt
+          echo "##vso[task.setvariable variable=HAS_CHANGES]true"
+        displayName: "Compute Delta Changed Files"
+
+      - script: |
+          python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
+          PACKAGE_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_package.xml"
+          TC_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_TestClass.txt"
+          echo "##vso[task.setvariable variable=PACKAGE_PATH]$PACKAGE_PATH"
+          echo "##vso[task.setvariable variable=TC_PATH]$TC_PATH"
+        displayName: "Generate Delta package.xml & TestClass.txt"
+        env:
+          FEATURE_BRANCH: $(SOURCE_BRANCH)
+          BUILD_SOURCES:  $(Build.SourcesDirectory)
+          API_VERSION:    "67.0"
+
+      - script: |
+          if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
+            TEST_CLASSES=$(paste -sd ' ' "$(TC_PATH)")
+            echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+            echo "Test level: RunSpecifiedTests | Classes: $TEST_CLASSES"
+          else
+            echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]"
+            echo "Test level: RunLocalTests (no Apex classes in delta)"
+          fi
+        displayName: "Resolve Test Classes from Delta"
+
+      - script: |
+          echo "Package : $(PACKAGE_PATH)"
+          echo "TestLevel: $(TEST_LEVEL)"
+          echo "Classes : $(TEST_CLASSES)"
+        displayName: "Display Validation Configuration"
 
       - script: |
           sf plugins install code-analyzer@latest
@@ -156,54 +193,13 @@ jobs:
       - script: |
           if [[ -f results.json ]]; then
             echo "| Rule Id | Severity | File | Line | Message |"
-            echo "|---------|----------|------|------|---------|" 
+            echo "|---------|----------|------|------|---------|"
             jq -r '.[] | "|"+(.ruleId // "N/A")+"|"+(.severity // "N/A")+"|"+(.file // "N/A")+"|"+((.line|tostring) // "N/A")+"|"+(.message // "N/A")+"|"' results.json || true
           fi
         displayName: "Display Salesforce Scanner Report"
 
+      # ── Validate delta package against target org ───────────────────────────
       - script: |
-          PKG_MANIFEST="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_package.xml"
-          echo "Checking for package manifest at: $PKG_MANIFEST"
-          if [[ ! -f "$PKG_MANIFEST" ]]; then
-            echo "Package manifest not found: $PKG_MANIFEST"
-            echo "Please ensure manifest/$(SOURCE_BRANCH)_package.xml exists"
-            exit 1
-          fi
-          echo "Package manifest found"
-          echo "##vso[task.setvariable variable=PACKAGE_PATH]$PKG_MANIFEST"
-        displayName: "Check if Package Manifest Exists"
-
-      - script: |
-          TEST_CLASS_FILE="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_TestClass.txt"
-          echo "Checking for test class file at: $TEST_CLASS_FILE"
-          if [[ ! -f "$TEST_CLASS_FILE" ]]; then
-            echo "Test class file not found - falling back to RunLocalTests"
-            echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
-            echo "##vso[task.setvariable variable=TEST_CLASSES]"
-          else
-            TEST_CLASSES=$(<"$TEST_CLASS_FILE")
-            TEST_CLASSES="${TEST_CLASSES#"${TEST_CLASSES%%[![:space:]]*}"}"
-            TEST_CLASSES="${TEST_CLASSES%"${TEST_CLASSES##*[![:space:]]}"}"  
-            if [[ -z "$TEST_CLASSES" ]]; then
-              echo "Test class file is empty - falling back to RunLocalTests"
-              echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
-              echo "##vso[task.setvariable variable=TEST_CLASSES]"
-            else
-              echo "Test classes: $TEST_CLASSES"
-              echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
-              echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
-            fi
-          fi
-        displayName: "Prepare Test Classes"
-
-      - script: |
-          echo "Package Manifest: $(PACKAGE_PATH)"
-          echo "Test Level: $(TEST_LEVEL)"
-          echo "Test Classes: $(TEST_CLASSES)"
-        displayName: "Display Validation Configuration"
-
-      - script: |
-          mkdir -p "$(Build.SourcesDirectory)/test-results"
           set +e
           read -ra tests_array <<< "$(TEST_CLASSES)"
           CMD=(sf project deploy validate \
@@ -221,21 +217,29 @@ jobs:
           "${CMD[@]}" | tee deploy-result.txt
           VALIDATION_EXIT_CODE=${PIPESTATUS[0]}
           set -e
-          TEST_RUN_ID=$(grep -oP '(?<=Test Run Id: |testRunId": "|AsyncApexJobId": ")\w+' deploy-result.txt | head -1 || true)
-          echo "##vso[task.setvariable variable=TEST_RUN_ID]$TEST_RUN_ID"
           if [[ "$VALIDATION_EXIT_CODE" != "0" ]]; then
             echo "VALIDATION FAILED"
             grep -i "error\|failed" deploy-result.txt | head -30 || true
             exit 1
           fi
           echo "VALIDATION PASSED"
-        displayName: "Validate Deployment against Target Org"
+        displayName: "Validate Delta Deployment against Target Org"
 
+      # ── Coverage check scoped to delta classes only ─────────────────────────
       - script: |
-          echo "Fetching coverage directly from org via SOQL..."
+          APEX_CLASSES=""
+          if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
+            APEX_CLASSES=$(paste -sd ',' "$(TC_PATH)")
+          fi
+          if [[ -z "$APEX_CLASSES" ]]; then
+            echo "No Apex classes in delta - skipping per-class coverage check"
+            exit 0
+          fi
+          echo "Checking coverage for delta classes: $APEX_CLASSES"
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
-            --soql "$(SF_USERNAME)"
-        displayName: "Check 85% Per-Class Apex Code Coverage"
+            --soql "$(SF_USERNAME)" \
+            --classes "$APEX_CLASSES"
+        displayName: "Check 85% Per-Class Apex Code Coverage (Delta Classes Only)"
 
       - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
         displayName: "JWT Key Cleanup"
