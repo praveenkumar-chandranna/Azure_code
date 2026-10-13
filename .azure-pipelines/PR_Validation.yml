@@ -3,7 +3,7 @@ trigger: none
 pr:
   branches:
     include:
-      - dev
+      - Dev
       - QA
       - UAT
       - master
@@ -16,32 +16,46 @@ pool:
 
 jobs:
   - job: check_source_branch
-    displayName: "Check PR Source Branch"
+    displayName: "Check PR Branch Pair"
     steps:
       - script: |
           SOURCE_BRANCH="$(System.PullRequest.SourceBranch)"
           SOURCE_BRANCH="${SOURCE_BRANCH##refs/heads/}"
-          echo "PR Source Branch: $SOURCE_BRANCH"
-          if [[ "$SOURCE_BRANCH" == "master" ]]; then
-            echo "PR from 'master' branch - SKIPPING validation"
+          DEST_BRANCH="$(System.PullRequest.TargetBranch)"
+          DEST_BRANCH="${DEST_BRANCH##refs/heads/}"
+          echo "PR: $SOURCE_BRANCH -> $DEST_BRANCH"
+
+          # Enforce valid pairs only: dev->QA, QA->UAT, UAT->master
+          VALID="false"
+          if [[ "$SOURCE_BRANCH" == "Dev"  && "$DEST_BRANCH" == "QA"     ]]; then VALID="true"; fi
+          if [[ "$SOURCE_BRANCH" == "QA"   && "$DEST_BRANCH" == "UAT"    ]]; then VALID="true"; fi
+          if [[ "$SOURCE_BRANCH" == "UAT"  && "$DEST_BRANCH" == "master" ]]; then VALID="true"; fi
+
+          if [[ "$VALID" == "false" ]]; then
+            echo "ERROR: Invalid PR branch pair '$SOURCE_BRANCH -> $DEST_BRANCH'"
+            echo "Allowed pairs: dev->QA | QA->UAT | UAT->master"
             echo "##vso[task.setvariable variable=should_validate;isOutput=true]false"
+            echo "##vso[task.setvariable variable=invalid_pair;isOutput=true]true"
           else
-            echo "PR from '$SOURCE_BRANCH' - ALLOWING validation"
+            echo "Valid PR pair - proceeding with validation"
             echo "##vso[task.setvariable variable=should_validate;isOutput=true]true"
+            echo "##vso[task.setvariable variable=invalid_pair;isOutput=true]false"
           fi
-        displayName: "Verify Source Branch"
+        displayName: "Verify PR Branch Pair"
         name: verify
 
-  - job: notify_master_skip
-    displayName: "Notify - Validation Skipped"
+  - job: notify_invalid_pair
+    displayName: "Notify - Invalid Branch Pair"
     dependsOn: check_source_branch
-    condition: eq(dependencies.check_source_branch.outputs['verify.should_validate'], 'false')
+    condition: eq(dependencies.check_source_branch.outputs['verify.invalid_pair'], 'true')
     steps:
       - script: |
-          echo "=========================================="
-          echo "VALIDATION SKIPPED - PR from master branch"
-          echo "=========================================="
-        displayName: "Validation Skipped"
+          echo "=============================================="
+          echo "VALIDATION SKIPPED - Invalid PR branch pair"
+          echo "Allowed: Dev->QA | QA->UAT | UAT->master"
+          echo "=============================================="
+          exit 1
+        displayName: "Invalid Branch Pair - Failing Pipeline"
 
   - job: Pre_Validation_Build
     displayName: "Pre Validation Build"
@@ -83,7 +97,7 @@ jobs:
 
       - script: |
           case "$(DEST_BRANCH)" in
-            dev)
+            Dev)
               echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_DEV_USERNAME)"
               echo "##vso[task.setvariable variable=SF_INSTANCE_URL]$(SANDBOX_URL)"
               echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_DEV)"
@@ -165,36 +179,64 @@ jobs:
           else
             echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
             echo "##vso[task.setvariable variable=TEST_CLASSES]"
-            echo "Test level: RunLocalTests (no Apex classes in delta)"
+            echo "Test level: RunLocalTests (no test classes in delta)"
           fi
         displayName: "Resolve Test Classes from Delta"
 
       - script: |
+          echo "=========================================="
           echo "Package  : $(PACKAGE_PATH)"
           echo "TestLevel: $(TEST_LEVEL)"
           echo "Classes  : $(TEST_CLASSES)"
-        displayName: "Display Validation Configuration"
+          echo "=========================================="
+          echo "package.xml contents:"
+          cat "$(PACKAGE_PATH)"
+        displayName: "Display package.xml & Validation Configuration"
 
       - script: |
-          sf plugins install code-analyzer@latest
+          sf plugins install @salesforce/plugin-code-analyzer@latest
         displayName: "Install Salesforce Code Analyzer Plugin"
 
       - script: |
-          sf scanner run \
-            --normalize-severity \
-            --target . \
-            --outfile results.json \
-            --format json \
-            --verbose || true
-        displayName: "Run Salesforce Code Analyzer"
+          sf code-analyzer run \
+            --severity-threshold 3 \
+            --target "$(Build.SourcesDirectory)/force-app" \
+            --output-file "$(Build.SourcesDirectory)/scanner-results.json" \
+            --output-file "$(Build.SourcesDirectory)/scanner-results.html" || true
+        displayName: "Run Salesforce Code Analyzer (Full Scan)"
+
+      - task: PublishPipelineArtifact@1
+        displayName: "Publish Code Analyzer Results"
+        condition: always()
+        inputs:
+          targetPath: "$(Build.SourcesDirectory)/scanner-results.html"
+          artifact: "code-analyzer-results"
 
       - script: |
-          if [[ -f results.json ]]; then
-            echo "| Rule Id | Severity | File | Line | Message |"
-            echo "|---------|----------|------|------|---------|"
-            jq -r '.[] | "|"+(.ruleId // "N/A")+"|"+(.severity // "N/A")+"|"+(.file // "N/A")+"|"+((.line|tostring) // "N/A")+"|"+(.message // "N/A")+"|"' results.json || true
+          if [[ ! -f "$(Build.SourcesDirectory)/scanner-results.json" ]]; then
+            echo "No scanner results found - skipping"
+            exit 0
           fi
-        displayName: "Display Salesforce Scanner Report"
+          echo "===== Code Analyzer Results ====="
+          CRITICAL_HIGH_MOD=$(jq '[.[] | select(.normalizedSeverity <= 3)] | length' "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || echo 0)
+          LOW_INFO=$(jq '[.[] | select(.normalizedSeverity > 3)] | length' "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || echo 0)
+          echo "Severity 1-3 (Critical/High/Moderate): $CRITICAL_HIGH_MOD violations"
+          echo "Severity 4-5 (Low/Info)              : $LOW_INFO violations"
+          echo ""
+          echo "===== Severity 1-3 Violations (FAIL) ====="
+          jq -r '.[] | select(.normalizedSeverity <= 3) | "[SEV-"+(.normalizedSeverity|tostring)+"] "+.fileName+":"+((.line|tostring))+" - "+.ruleName+" | "+.message' \
+            "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || true
+          echo ""
+          echo "===== Severity 4-5 Violations (WARN) ====="
+          jq -r '.[] | select(.normalizedSeverity > 3) | "[SEV-"+(.normalizedSeverity|tostring)+"] "+.fileName+":"+((.line|tostring))+" - "+.ruleName+" | "+.message' \
+            "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || true
+          if [[ "$CRITICAL_HIGH_MOD" -gt 0 ]]; then
+            echo ""
+            echo "PIPELINE FAILED: $CRITICAL_HIGH_MOD violation(s) of severity 1-3 found. Fix before merging."
+            exit 1
+          fi
+          echo "Code analysis passed - no Critical/High/Moderate violations found."
+        displayName: "Enforce Severity Thresholds (Fail on 1-3, Warn on 4-5)"
 
       # ── Validate delta package against target org ───────────────────────────
       - script: |
@@ -234,7 +276,7 @@ jobs:
             APEX_CLASSES=$(paste -sd ',' "$(TC_PATH)")
           fi
           if [[ -z "$APEX_CLASSES" ]]; then
-            echo "No Apex classes in delta - skipping per-class coverage check"
+            echo "No test classes in delta - skipping per-class coverage check"
             exit 0
           fi
           echo "Checking coverage for delta classes: $APEX_CLASSES"

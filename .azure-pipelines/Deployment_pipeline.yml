@@ -40,7 +40,7 @@ jobs:
 
           case "$ENVIRONMENT" in
             QA)
-              EXPECTED_SOURCE="dev"
+              EXPECTED_SOURCE="Dev"
               TARGET_BRANCH="QA"
               ;;
             UAT)
@@ -128,13 +128,12 @@ jobs:
       # ── Delta package generation from git diff ──────────────────────────────
       - script: |
           git fetch --all
-          echo "Computing delta: $(SOURCE_BRANCH) vs $(TARGET_BRANCH)"
-          CHANGED=$(git diff --name-only origin/$(TARGET_BRANCH)...origin/$(SOURCE_BRANCH) -- force-app/ 2>/dev/null || \
-                    git diff --name-only origin/$(TARGET_BRANCH) origin/$(SOURCE_BRANCH) -- force-app/ 2>/dev/null || echo "")
+          echo "Computing delta: last merge into $(TARGET_BRANCH)"
+          CHANGED=$(git diff --name-only origin/$(TARGET_BRANCH)~1 origin/$(TARGET_BRANCH) -- force-app/ 2>/dev/null || echo "")
           echo "Changed files:"
           echo "$CHANGED"
           if [[ -z "$CHANGED" ]]; then
-            echo "ERROR: No changed files detected between $(SOURCE_BRANCH) and $(TARGET_BRANCH)"
+            echo "ERROR: No changed files detected in last merge to $(TARGET_BRANCH)"
             exit 1
           fi
           echo "$CHANGED" > /tmp/changed_files.txt
@@ -169,6 +168,61 @@ jobs:
             fi
           fi
         displayName: "Resolve Test Classes from Delta"
+
+      - script: |
+          echo "=========================================="
+          echo "Manifest : $(MANIFEST_PATH)"
+          echo "TestLevel: $(TEST_LEVEL)"
+          echo "Classes  : $(TEST_CLASSES)"
+          echo "=========================================="
+          echo "package.xml contents:"
+          cat "$(MANIFEST_PATH)"
+        displayName: "Display package.xml & Deployment Configuration"
+
+      - script: |
+          sf plugins install @salesforce/plugin-code-analyzer@latest
+        displayName: "Install Salesforce Code Analyzer Plugin"
+
+      - script: |
+          sf code-analyzer run \
+            --severity-threshold 3 \
+            --target "$(Build.SourcesDirectory)/force-app" \
+            --output-file "$(Build.SourcesDirectory)/scanner-results.json" \
+            --output-file "$(Build.SourcesDirectory)/scanner-results.html" || true
+        displayName: "Run Salesforce Code Analyzer (Full Scan)"
+
+      - task: PublishPipelineArtifact@1
+        displayName: "Publish Code Analyzer Results"
+        condition: always()
+        inputs:
+          targetPath: "$(Build.SourcesDirectory)/scanner-results.html"
+          artifact: "code-analyzer-results"
+
+      - script: |
+          if [[ ! -f "$(Build.SourcesDirectory)/scanner-results.json" ]]; then
+            echo "No scanner results found - skipping"
+            exit 0
+          fi
+          echo "===== Code Analyzer Results ====="
+          CRITICAL_HIGH_MOD=$(jq '[.[] | select(.normalizedSeverity <= 3)] | length' "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || echo 0)
+          LOW_INFO=$(jq '[.[] | select(.normalizedSeverity > 3)] | length' "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || echo 0)
+          echo "Severity 1-3 (Critical/High/Moderate): $CRITICAL_HIGH_MOD violations"
+          echo "Severity 4-5 (Low/Info)              : $LOW_INFO violations"
+          echo ""
+          echo "===== Severity 1-3 Violations (FAIL) ====="
+          jq -r '.[] | select(.normalizedSeverity <= 3) | "[SEV-"+(.normalizedSeverity|tostring)+"] "+.fileName+":"+((.line|tostring))+" - "+.ruleName+" | "+.message' \
+            "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || true
+          echo ""
+          echo "===== Severity 4-5 Violations (WARN) ====="
+          jq -r '.[] | select(.normalizedSeverity > 3) | "[SEV-"+(.normalizedSeverity|tostring)+"] "+.fileName+":"+((.line|tostring))+" - "+.ruleName+" | "+.message' \
+            "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || true
+          if [[ "$CRITICAL_HIGH_MOD" -gt 0 ]]; then
+            echo ""
+            echo "PIPELINE FAILED: $CRITICAL_HIGH_MOD violation(s) of severity 1-3 found. Fix before deploying."
+            exit 1
+          fi
+          echo "Code analysis passed - no Critical/High/Moderate violations found."
+        displayName: "Enforce Severity Thresholds (Fail on 1-3, Warn on 4-5)"
 
       # ── Validate delta package ──────────────────────────────────────────────
       - script: |

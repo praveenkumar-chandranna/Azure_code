@@ -1,6 +1,9 @@
 """
 check_coverage.py
-Enforces 85% minimum per-class Apex code coverage from sf deploy validate results.
+Enforces 85% minimum per-class Apex code coverage.
+
+Reads coverage from --results-dir JSON files written by sf deploy validate
+--coverage-formatters json. Falls back to printing dir contents on failure.
 
 Usage:
   python3 check_coverage.py --results-dir <path> --classes <Class1,Class2,...>
@@ -34,40 +37,65 @@ def print_table(rows):
     return failures
 
 
+def debug_dir(results_dir):
+    """Print all files found under results_dir to help diagnose structure."""
+    print(f"\nDEBUG: Contents of results dir '{results_dir}':")
+    for root, dirs, files in os.walk(results_dir):
+        for f in files:
+            fpath = os.path.join(root, f)
+            print(f"  {fpath}")
+
+
+def try_parse_json(path):
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
 def load_coverage(results_dir, class_filter):
-    """
-    Reads coverage from sf deploy validate --coverage-formatters json output.
-    Looks for coverage-summary.json or any .json file under results_dir.
-    """
-    # Try coverage-summary.json first, then any json file
-    candidates = (
-        glob.glob(os.path.join(results_dir, "**", "coverage-summary.json"), recursive=True) +
-        glob.glob(os.path.join(results_dir, "**", "*.json"), recursive=True)
-    )
-    candidates = list(dict.fromkeys(candidates))  # deduplicate, preserve order
+    all_json = glob.glob(os.path.join(results_dir, "**", "*.json"), recursive=True)
 
     coverage_map = {}
-    for path in candidates:
-        try:
-            with open(path) as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, OSError):
+
+    for path in all_json:
+        data = try_parse_json(path)
+        if data is None:
             continue
 
-        # istanbul/v8 coverage-summary.json format: { "ClassName": { "lines": { "covered": N, "total": N } } }
-        if isinstance(data, dict) and any(isinstance(v, dict) and "lines" in v for v in data.values()):
-            for cls_name, stats in data.items():
-                if cls_name == "total":
-                    continue
-                lines = stats.get("lines", {})
-                covered   = lines.get("covered", 0)
-                total     = lines.get("total", 0)
-                uncovered = total - covered
-                coverage_map[cls_name] = (covered, uncovered)
+        # Format 1: SF CLI coverage.json — { "path/ClassName.cls": { "s": { "1": 1, "2": 0 } } }
+        # Keys are file paths, values have statement/branch/function maps
+        if isinstance(data, dict) and all(
+            isinstance(v, dict) and any(k in v for k in ("s", "b", "f", "fnMap", "statementMap"))
+            for v in list(data.values())[:3]
+        ):
+            for file_path, stats in data.items():
+                # Extract class name from path like "force-app/main/default/classes/MyClass.cls"
+                cls_name = os.path.splitext(os.path.basename(file_path))[0]
+                stmts = stats.get("s", {})
+                if stmts:
+                    covered   = sum(1 for v in stmts.values() if v > 0)
+                    uncovered = sum(1 for v in stmts.values() if v == 0)
+                    coverage_map[cls_name] = (covered, uncovered)
             if coverage_map:
                 break
 
-        # sf CLI codecoverage array format: [ { "name": "...", "numLinesCovered": N, "numLinesUncovered": N } ]
+        # Format 2: coverage-summary.json — { "ClassName": { "lines": { "covered": N, "total": N } } }
+        if isinstance(data, dict) and any(
+            isinstance(v, dict) and "lines" in v for v in list(data.values())[:3]
+        ):
+            for cls_name, stats in data.items():
+                if cls_name == "total":
+                    continue
+                lines     = stats.get("lines", {})
+                covered   = lines.get("covered", 0)
+                total     = lines.get("total", 0)
+                coverage_map[cls_name] = (covered, total - covered)
+            if coverage_map:
+                break
+
+        # Format 3: SF CLI array — [ { "name": "...", "numLinesCovered": N, "numLinesUncovered": N } ]
         records = None
         if isinstance(data, list):
             records = data
@@ -77,24 +105,33 @@ def load_coverage(results_dir, class_filter):
                 data.get("codecoverage") or
                 data.get("result", {}).get("details", {}).get("runTestResult", {}).get("codeCoverage")
             )
-        if records and isinstance(records, list):
-            for r in records:
-                name      = r.get("name") or r.get("ApexClassOrTrigger", {}).get("Name", "")
-                covered   = int(r.get("numLinesCovered",   r.get("NumLinesCovered",   0)))
-                uncovered = int(r.get("numLinesUncovered", r.get("NumLinesUncovered", 0)))
-                if name:
-                    coverage_map[name] = (covered, uncovered)
-            if coverage_map:
-                break
+        if records and isinstance(records, list) and len(records) > 0:
+            first = records[0]
+            if isinstance(first, dict) and ("name" in first or "numLinesCovered" in first):
+                for r in records:
+                    name      = r.get("name") or r.get("ApexClassOrTrigger", {}).get("Name", "")
+                    covered   = int(r.get("numLinesCovered",   r.get("NumLinesCovered",   0)))
+                    uncovered = int(r.get("numLinesUncovered", r.get("NumLinesUncovered", 0)))
+                    if name:
+                        coverage_map[name] = (covered, uncovered)
+                if coverage_map:
+                    break
 
     if not coverage_map:
-        print(f"ERROR: No coverage data found in results directory: {results_dir}")
+        debug_dir(results_dir)
+        # Print first 500 chars of each json file found to help diagnose
+        for path in all_json[:3]:
+            print(f"\nDEBUG: Preview of {path}:")
+            data = try_parse_json(path)
+            if data:
+                print(str(data)[:500])
+        print(f"\nERROR: No coverage data found in results directory: {results_dir}")
         print("Ensure --coverage-formatters json --results-dir was passed to sf project deploy validate")
         sys.exit(2)
 
-    # Filter to requested classes only
+    print(f"Coverage data loaded from results dir. {len(coverage_map)} class(es) found.")
+
     rows = []
-    missing = []
     for cls in class_filter:
         if cls in coverage_map:
             covered, uncovered = coverage_map[cls]
@@ -102,7 +139,6 @@ def load_coverage(results_dir, class_filter):
         else:
             print(f"WARNING: No coverage record for '{cls}' - treating as 0%")
             rows.append((cls, 0, 1))
-            missing.append(cls)
 
     return rows
 
@@ -114,10 +150,10 @@ if "--results-dir" not in args or "--classes" not in args:
     print("Usage: python3 check_coverage.py --results-dir <path> --classes <Class1,Class2>")
     sys.exit(2)
 
-rd_idx = args.index("--results-dir")
+rd_idx      = args.index("--results-dir")
 results_dir = args[rd_idx + 1]
 
-cls_idx = args.index("--classes")
+cls_idx      = args.index("--classes")
 class_filter = [c.strip() for c in args[cls_idx + 1].split(",") if c.strip()]
 
 if not class_filter:
@@ -126,6 +162,7 @@ if not class_filter:
 
 if not os.path.isdir(results_dir):
     print(f"ERROR: Results directory not found: {results_dir}")
+    print("Ensure --coverage-formatters json --results-dir was passed to sf project deploy validate")
     sys.exit(2)
 
 # ── Run ───────────────────────────────────────────────────────────────────────

@@ -56,15 +56,11 @@ for f in changed_files:
     meta_type = TYPE_MAP.get(folder)
     if not meta_type:
         continue
-    member = re.sub(
-        r'\.(cls|trigger|page|component|flow|layout|permissionset|profile|resource|'
-        r'tab|labels|flexipage|workflow|xml|js|html|css|svg|json|md)(-meta\.xml)?$',
-        '', filename
-    )
+    member = re.sub(r'\.[a-zA-Z]+-meta\.xml$|-meta\.xml$|\.xml$|\.cls$|\.trigger$|\.page$|\.component$|\.resource$', '', filename)
     if folder in ("lwc", "aura"):
         member = parts[1]
     if folder == "objects" and len(parts) >= 4 and parts[2] in SUB_TYPE_MAP:
-        member    = f"{parts[1]}.{re.sub(r'-meta\\.xml$', '', parts[3])}"
+        member    = f"{parts[1]}.{re.sub(r'\.[a-zA-Z]+-meta\.xml$|(-meta)?\.xml$', '', parts[3])}"
         meta_type = SUB_TYPE_MAP[parts[2]]
     elif folder == "objects":
         member = parts[1]
