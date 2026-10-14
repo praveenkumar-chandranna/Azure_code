@@ -144,26 +144,55 @@ jobs:
 
       # ── Delta package generation from git diff ──────────────────────────────
       - script: |
-          git fetch --all
+          git fetch origin $(SOURCE_BRANCH):refs/remotes/origin/$(SOURCE_BRANCH)
+          git fetch origin $(DEST_BRANCH):refs/remotes/origin/$(DEST_BRANCH)
           echo "Computing delta: $(SOURCE_BRANCH) vs $(DEST_BRANCH)"
-          CHANGED=$(git diff --name-only origin/$(DEST_BRANCH)...origin/$(SOURCE_BRANCH) -- force-app/ 2>/dev/null || \
-                    git diff --name-only origin/$(DEST_BRANCH) origin/$(SOURCE_BRANCH) -- force-app/ 2>/dev/null || echo "")
-          echo "Changed files:"
-          echo "$CHANGED"
-          if [[ -z "$CHANGED" ]]; then
-            echo "ERROR: No changed files detected between $(SOURCE_BRANCH) and $(DEST_BRANCH)"
+          rm -f /tmp/changed_files.txt
+
+          MERGE_BASE=$(git merge-base origin/$(DEST_BRANCH) origin/$(SOURCE_BRANCH) 2>/dev/null)
+          if [[ -z "$MERGE_BASE" ]]; then
+            echo "ERROR: Could not find merge base between $(SOURCE_BRANCH) and $(DEST_BRANCH)"
             exit 1
           fi
-          echo "$CHANGED" > /tmp/changed_files.txt
+          echo "Merge base: $MERGE_BASE"
+
+          ALL_CHANGED=$(git diff --name-only "$MERGE_BASE" origin/$(SOURCE_BRANCH))
+          if [[ -z "$ALL_CHANGED" ]]; then
+            echo "ERROR: No difference found between $(SOURCE_BRANCH) and $(DEST_BRANCH) - branches are identical, nothing to validate"
+            exit 1
+          fi
+          echo "All changed files in PR:"
+          echo "$ALL_CHANGED"
+
+          CHANGED=$(echo "$ALL_CHANGED" | grep '^force-app/')
+          if [[ -z "$CHANGED" ]]; then
+            echo "ERROR: PR has commits but no force-app/ changes - Salesforce validation cannot proceed"
+            exit 1
+          fi
+          echo "Salesforce changed files:"
+          echo "$CHANGED"
+          # Write build ID as first line so gen_artifacts.py can verify freshness
+          echo "#BUILD_ID=$(Build.BuildId)" > /tmp/changed_files.txt
+          echo "$CHANGED" >> /tmp/changed_files.txt
           echo "##vso[task.setvariable variable=HAS_CHANGES]true"
         displayName: "Compute Delta Changed Files"
 
       - script: |
           python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
+          if [[ $? -ne 0 ]]; then
+            echo "ERROR: gen_artifacts.py failed - no metadata found in delta"
+            exit 1
+          fi
           PACKAGE_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_package.xml"
           TC_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_TestClass.txt"
+          MC_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_MainClass.txt"
+          if [[ ! -f "$PACKAGE_PATH" ]]; then
+            echo "ERROR: package.xml not generated at $PACKAGE_PATH"
+            exit 1
+          fi
           echo "##vso[task.setvariable variable=PACKAGE_PATH]$PACKAGE_PATH"
           echo "##vso[task.setvariable variable=TC_PATH]$TC_PATH"
+          echo "##vso[task.setvariable variable=MC_PATH]$MC_PATH"
         displayName: "Generate Delta package.xml & TestClass.txt"
         env:
           FEATURE_BRANCH: $(SOURCE_BRANCH)
@@ -171,15 +200,49 @@ jobs:
           API_VERSION:    "67.0"
 
       - script: |
-          if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
+          HAS_MAIN=$([ -f "$(MC_PATH)" ] && [ -s "$(MC_PATH)" ] && echo "true" || echo "false")
+          HAS_TEST=$([ -f "$(TC_PATH)" ] && [ -s "$(TC_PATH)" ] && echo "true" || echo "false")
+          HAS_APEX=$(grep -cE '<name>(ApexClass|ApexTrigger)</name>' "$(PACKAGE_PATH)" 2>/dev/null; true)
+
+          if [[ "$HAS_APEX" -eq 0 ]]; then
+            # No Apex in delta - NoTestRun for all environments
+            echo "No Apex in delta - setting NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]"
+
+          elif [[ "$HAS_MAIN" == "true" && "$HAS_TEST" == "true" ]]; then
+            # Main + test class both in delta
             TEST_CLASSES=$(paste -sd ' ' "$(TC_PATH)")
+            echo "Main + test in delta - RunSpecifiedTests: $TEST_CLASSES"
             echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
             echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
-            echo "Test level: RunSpecifiedTests | Classes: $TEST_CLASSES"
+
+          elif [[ "$HAS_MAIN" == "true" && "$HAS_TEST" == "false" ]]; then
+            # Main class only - search repo for matching test class
+            echo "Main class in delta but no test class - searching repo..."
+            FOUND_TESTS=""
+            CLASSES_DIR="$(Build.SourcesDirectory)/force-app/main/default/classes"
+            while IFS= read -r main_class; do
+              echo "Searching for test referencing: $main_class"
+              MATCH=$(grep -rl "$main_class" "$CLASSES_DIR" --include="*.cls" 2>/dev/null | while read -r f; do
+                if grep -qiE '@isTest' "$f"; then basename "$f" .cls; fi
+              done | tr '\n' ' ')
+              [[ -n "$MATCH" ]] && FOUND_TESTS="$FOUND_TESTS $MATCH"
+            done < "$(MC_PATH)"
+            FOUND_TESTS=$(echo "$FOUND_TESTS" | xargs)
+            if [[ -n "$FOUND_TESTS" ]]; then
+              echo "Found test classes: $FOUND_TESTS - RunSpecifiedTests"
+              echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+              echo "##vso[task.setvariable variable=TEST_CLASSES]$FOUND_TESTS"
+            else
+              echo "No test class found in repo - falling back to RunLocalTests"
+              echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+              echo "##vso[task.setvariable variable=TEST_CLASSES]"
+            fi
+
           else
             echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
             echo "##vso[task.setvariable variable=TEST_CLASSES]"
-            echo "Test level: RunLocalTests (no test classes in delta)"
           fi
         displayName: "Resolve Test Classes from Delta"
 
@@ -250,10 +313,11 @@ jobs:
             --wait 60 \
             --ignore-warnings \
             --test-level "$(TEST_LEVEL)" \
-            --coverage-formatters json \
-            --results-dir "$RESULTS_DIR" \
             --verbose)
-          if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && ${#tests_array[@]} -gt 0 ]]; then
+          if [[ "$(TEST_LEVEL)" != "NoTestRun" ]]; then
+            CMD+=(--coverage-formatters json --results-dir "$RESULTS_DIR")
+          fi
+          if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]]; then
             CMD+=(--tests)
             for test in "${tests_array[@]}"; do CMD+=("$test"); done
           fi
@@ -284,6 +348,7 @@ jobs:
             --results-dir "$(Build.SourcesDirectory)/test-results" \
             --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Apex Code Coverage (Delta Classes Only)"
+        condition: and(succeeded(), ne(variables['TEST_LEVEL'], 'NoTestRun'))
 
       - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
         displayName: "JWT Key Cleanup"

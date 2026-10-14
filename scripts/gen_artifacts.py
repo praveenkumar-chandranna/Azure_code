@@ -17,7 +17,7 @@ branch        = os.environ["FEATURE_BRANCH"]
 api_version   = os.environ.get("API_VERSION", "67.0")
 
 with open("/tmp/changed_files.txt") as f:
-    changed_files = [l.strip() for l in f if l.strip()]
+    changed_files = [l.strip() for l in f if l.strip() and not l.startswith("#")]
 
 TYPE_MAP = {
     "classes": "ApexClass", "triggers": "ApexTrigger",
@@ -91,34 +91,37 @@ with open(pkg_path, "wb") as fh:
     tree.write(fh, encoding="utf-8", xml_declaration=True)
 print(f"package.xml   -> {pkg_path}")
 
-# TestClass.txt – test classes only (name pattern OR @isTest annotation in file)
+# Classify ApexClass members into test vs main
 def is_test_class(name):
-    """Check by naming convention first."""
     lower = name.lower()
     return lower.endswith("test") or lower.endswith("tests") or lower.endswith("_test")
 
 def has_istest_annotation(name):
-    """Scan the .cls file for @isTest annotation."""
     cls_path = os.path.join(build_sources, "force-app", "main", "default", "classes", f"{name}.cls")
     if not os.path.isfile(cls_path):
         return False
     try:
-        with open(cls_path, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read(2000)  # only need to check top of file
-        return bool(re.search(r'@isTest', content, re.IGNORECASE))
+        with open(cls_path, "r", encoding="utf-8", errors="ignore") as fh:
+            return bool(re.search(r'@isTest', fh.read(2000), re.IGNORECASE))
     except OSError:
         return False
 
-all_apex = members_by_type.get("ApexClass", set())
-test_classes = sorted(
-    c for c in all_apex
-    if is_test_class(c) or has_istest_annotation(c)
-)
+all_apex   = members_by_type.get("ApexClass", set())
+test_classes = sorted(c for c in all_apex if is_test_class(c) or has_istest_annotation(c))
+main_classes = sorted(c for c in all_apex if c not in test_classes)
+
 tc_path = os.path.join(build_sources, "manifest", f"{branch}_TestClass.txt")
 if test_classes:
     with open(tc_path, "w") as fh:
         fh.write("\n".join(test_classes) + "\n")
-    print(f"TestClass.txt -> {tc_path}")
-    print(f"  Test classes: {test_classes}")
+    print(f"TestClass.txt -> {tc_path} | {test_classes}")
 else:
-    print("No test classes found in delta – TestClass.txt skipped (RunLocalTests will be used)")
+    print("No test classes in delta – TestClass.txt skipped")
+
+mc_path = os.path.join(build_sources, "manifest", f"{branch}_MainClass.txt")
+if main_classes:
+    with open(mc_path, "w") as fh:
+        fh.write("\n".join(main_classes) + "\n")
+    print(f"MainClass.txt -> {mc_path} | {main_classes}")
+else:
+    print("No main classes in delta – MainClass.txt skipped")
