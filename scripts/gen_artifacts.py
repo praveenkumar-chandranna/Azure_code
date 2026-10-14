@@ -114,8 +114,6 @@ test_classes = sorted(
     c for c in all_apex
     if is_test_class(c) or has_istest_annotation(c)
 )
-main_classes = sorted(c for c in all_apex if c not in test_classes)
-
 tc_path = os.path.join(build_sources, "manifest", f"{branch}_TestClass.txt")
 if test_classes:
     with open(tc_path, "w") as fh:
@@ -123,13 +121,4 @@ if test_classes:
     print(f"TestClass.txt -> {tc_path}")
     print(f"  Test classes: {test_classes}")
 else:
-    print("No test classes found in delta – TestClass.txt skipped")
-
-mc_path = os.path.join(build_sources, "manifest", f"{branch}_MainClass.txt")
-if main_classes:
-    with open(mc_path, "w") as fh:
-        fh.write("\n".join(main_classes) + "\n")
-    print(f"MainClass.txt -> {mc_path}")
-    print(f"  Main classes: {main_classes}")
-else:
-    print("No main classes found in delta – MainClass.txt skipped")
+    print("No test classes found in delta – TestClass.txt skipped (RunLocalTests will be used)")
