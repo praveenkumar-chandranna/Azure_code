@@ -146,12 +146,16 @@ jobs:
       - script: |
           git fetch --all
           echo "Computing delta: $(SOURCE_BRANCH) vs $(DEST_BRANCH)"
-          CHANGED=$(git diff --name-only origin/$(DEST_BRANCH)...origin/$(SOURCE_BRANCH) -- force-app/ 2>/dev/null || \
-                    git diff --name-only origin/$(DEST_BRANCH) origin/$(SOURCE_BRANCH) -- force-app/ 2>/dev/null || echo "")
+
+          # Always clear stale temp file from previous runs
+          rm -f /tmp/changed_files.txt
+
+          CHANGED=$(git diff --name-only origin/$(DEST_BRANCH)...origin/$(SOURCE_BRANCH) -- force-app/ 2>/dev/null || echo "")
           echo "Changed files:"
           echo "$CHANGED"
           if [[ -z "$CHANGED" ]]; then
-            echo "ERROR: No changed files detected between $(SOURCE_BRANCH) and $(DEST_BRANCH)"
+            echo "ERROR: No changed files detected in force-app/ between $(SOURCE_BRANCH) and $(DEST_BRANCH)"
+            echo "Ensure your PR contains changes under force-app/"
             exit 1
           fi
           echo "$CHANGED" > /tmp/changed_files.txt
@@ -160,10 +164,20 @@ jobs:
 
       - script: |
           python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
+          if [[ $? -ne 0 ]]; then
+            echo "ERROR: gen_artifacts.py failed - no metadata found in delta"
+            exit 1
+          fi
           PACKAGE_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_package.xml"
           TC_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_TestClass.txt"
+          MC_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_MainClass.txt"
+          if [[ ! -f "$PACKAGE_PATH" ]]; then
+            echo "ERROR: package.xml not generated at $PACKAGE_PATH"
+            exit 1
+          fi
           echo "##vso[task.setvariable variable=PACKAGE_PATH]$PACKAGE_PATH"
           echo "##vso[task.setvariable variable=TC_PATH]$TC_PATH"
+          echo "##vso[task.setvariable variable=MC_PATH]$MC_PATH"
         displayName: "Generate Delta package.xml & TestClass.txt"
         env:
           FEATURE_BRANCH: $(SOURCE_BRANCH)
@@ -171,15 +185,55 @@ jobs:
           API_VERSION:    "67.0"
 
       - script: |
-          if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
+          HAS_MAIN=$([ -f "$(MC_PATH)" ] && [ -s "$(MC_PATH)" ] && echo "true" || echo "false")
+          HAS_TEST=$([ -f "$(TC_PATH)" ] && [ -s "$(TC_PATH)" ] && echo "true" || echo "false")
+          HAS_APEX=$(grep -cE '<name>(ApexClass|ApexTrigger)</name>' "$(PACKAGE_PATH)" 2>/dev/null || echo 0)
+
+          if [[ "$HAS_APEX" -eq 0 ]]; then
+            # Scenario 3: No Apex at all - NoTestRun for all environments
+            echo "No Apex in package - setting NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]"
+
+          elif [[ "$HAS_MAIN" == "true" && "$HAS_TEST" == "true" ]]; then
+            # Scenario 1: Both main and test class in delta - RunSpecifiedTests
             TEST_CLASSES=$(paste -sd ' ' "$(TC_PATH)")
+            echo "Main + test classes in delta - RunSpecifiedTests: $TEST_CLASSES"
             echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
             echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
-            echo "Test level: RunSpecifiedTests | Classes: $TEST_CLASSES"
+
+          elif [[ "$HAS_MAIN" == "true" && "$HAS_TEST" == "false" ]]; then
+            # Scenario 2: Main class only - search locally for matching test class
+            echo "Main class(es) found but no test class in delta - searching locally..."
+            FOUND_TESTS=""
+            CLASSES_DIR="$(Build.SourcesDirectory)/force-app/main/default/classes"
+            while IFS= read -r main_class; do
+              echo "Searching for test class referencing: $main_class"
+              MATCH=$(grep -rl "$main_class" "$CLASSES_DIR" --include="*.cls" 2>/dev/null | while read -r f; do
+                if grep -qiE '@isTest' "$f"; then
+                  basename "$f" .cls
+                fi
+              done | tr '\n' ' ')
+              if [[ -n "$MATCH" ]]; then
+                echo "Found: $MATCH"
+                FOUND_TESTS="$FOUND_TESTS $MATCH"
+              fi
+            done < "$(MC_PATH)"
+            FOUND_TESTS=$(echo "$FOUND_TESTS" | xargs)
+            if [[ -n "$FOUND_TESTS" ]]; then
+              echo "Resolved test classes: $FOUND_TESTS"
+              echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+              echo "##vso[task.setvariable variable=TEST_CLASSES]$FOUND_TESTS"
+            else
+              echo "No matching test class found locally - falling back to RunLocalTests"
+              echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+              echo "##vso[task.setvariable variable=TEST_CLASSES]"
+            fi
+
           else
+            # Fallback
             echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
             echo "##vso[task.setvariable variable=TEST_CLASSES]"
-            echo "Test level: RunLocalTests (no test classes in delta)"
           fi
         displayName: "Resolve Test Classes from Delta"
 
@@ -250,9 +304,10 @@ jobs:
             --wait 60 \
             --ignore-warnings \
             --test-level "$(TEST_LEVEL)" \
-            --coverage-formatters json \
-            --results-dir "$RESULTS_DIR" \
             --verbose)
+          if [[ "$(TEST_LEVEL)" != "NoTestRun" ]]; then
+            CMD+=(--coverage-formatters json --results-dir "$RESULTS_DIR")
+          fi
           if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && ${#tests_array[@]} -gt 0 ]]; then
             CMD+=(--tests)
             for test in "${tests_array[@]}"; do CMD+=("$test"); done
