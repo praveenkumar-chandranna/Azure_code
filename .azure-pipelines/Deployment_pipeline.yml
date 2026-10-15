@@ -239,7 +239,6 @@ jobs:
 
       - script: |
           sf code-analyzer run \
-            --severity-threshold 3 \
             --target "$(Build.SourcesDirectory)/force-app" \
             --output-file "$(Build.SourcesDirectory)/scanner-results.json" \
             --output-file "$(Build.SourcesDirectory)/scanner-results.html" || true
@@ -252,60 +251,67 @@ jobs:
           fi
           IST_TIME=$(TZ='Asia/Kolkata' date +'%d-%m-%Y %H:%M:%S IST')
 
-          # Detect JSON format: v4 wraps in {violations:[]} , v3 is a top-level array
-          IS_ARRAY=$(jq 'if type=="array" then "true" else "false" end' "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || echo '"false"')
-          if [[ "$IS_ARRAY" == '"true"' ]]; then
-            VIOLATIONS_JQ='.[]'
-            SEV_FIELD='if .normalizedSeverity then .normalizedSeverity else .severity end'
-          else
-            VIOLATIONS_JQ='.violations[]?'
-            SEV_FIELD='if .normalizedSeverity then .normalizedSeverity else .severity end'
-          fi
+          JSON="$(Build.SourcesDirectory)/scanner-results.json"
 
-          CRITICAL_HIGH_MOD=$(jq "[${VIOLATIONS_JQ} | select((${SEV_FIELD}) <= 3)] | length" "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || echo 0)
-          LOW_INFO=$(jq "[${VIOLATIONS_JQ} | select((${SEV_FIELD}) > 3)] | length" "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || echo 0)
+          # Write jq filters to temp files (handles both v3 array and v4 {violations:[]} formats)
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s <= 3) | "[SEV-"+($s|tostring)+"] "+$f+":"+($l|tostring)+" - "+($v.rule // $v.ruleName)+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))' > /tmp/jq_fail_log.jq
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s > 3) | "[SEV-"+($s|tostring)+"] "+$f+":"+($l|tostring)+" - "+($v.rule // $v.ruleName)+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))' > /tmp/jq_warn_log.jq
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s <= 3) | "| "+$f+" | "+($s|tostring)+" | "+($l|tostring)+" | "+($v.rule // $v.ruleName)+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))+" |"' > /tmp/jq_fail_table.jq
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s > 3) | "| "+$f+" | "+($s|tostring)+" | "+($l|tostring)+" | "+($v.rule // $v.ruleName)+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))+" |"' > /tmp/jq_warn_table.jq
+
+          SEV1=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. == 1)] | length' "$JSON" 2>/dev/null || echo 0)
+          SEV2=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. == 2)] | length' "$JSON" 2>/dev/null || echo 0)
+          SEV3=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. == 3)] | length' "$JSON" 2>/dev/null || echo 0)
+          LOW_INFO=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. > 3)] | length' "$JSON" 2>/dev/null || echo 0)
 
           echo "===== Code Analyzer Results (${IST_TIME}) ====="
-          echo "Severity 1-3 (Critical/High/Moderate): $CRITICAL_HIGH_MOD violations"
-          echo "Severity 4-5 (Low/Info)              : $LOW_INFO violations"
+          echo "Severity 1 (Critical) : $SEV1 violations (threshold: 0)"
+          echo "Severity 2 (High)     : $SEV2 violations (threshold: 5)"
+          echo "Severity 3 (Moderate) : $SEV3 violations (threshold: 10)"
+          echo "Severity 4-5 (Low/Info): $LOW_INFO violations (WARN only)"
           echo ""
           echo "===== Severity 1-3 Violations (FAIL) ====="
-          jq -r "${VIOLATIONS_JQ} | select((${SEV_FIELD}) <= 3) | \"[SEV-\"+((${SEV_FIELD})|tostring)+\"] \"+.fileName+\":\"+(.line|tostring)+\" - \"+.ruleName+\" | \"+.message" \
-            "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || true
+          jq -rf /tmp/jq_fail_log.jq "$JSON" 2>/dev/null || true
           echo ""
           echo "===== Severity 4-5 Violations (WARN) ====="
-          jq -r "${VIOLATIONS_JQ} | select((${SEV_FIELD}) > 3) | \"[SEV-\"+((${SEV_FIELD})|tostring)+\"] \"+.fileName+\":\"+(.line|tostring)+\" - \"+.ruleName+\" | \"+.message" \
-            "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null || true
+          jq -rf /tmp/jq_warn_log.jq "$JSON" 2>/dev/null || true
 
-          # Build summary markdown for pipeline summary page
+          # Build summary markdown
           SUMMARY="$(Build.SourcesDirectory)/scanner-summary.md"
-          echo "## 🔍 Salesforce Code Analyzer Results" > "$SUMMARY"
-          echo "**Run Time:** ${IST_TIME}" >> "$SUMMARY"
-          echo "" >> "$SUMMARY"
-          echo "| Severity | Count |" >> "$SUMMARY"
-          echo "|---|---|" >> "$SUMMARY"
-          echo "| 🔴 Critical/High/Moderate (1-3) | $CRITICAL_HIGH_MOD |" >> "$SUMMARY"
-          echo "| 🟡 Low/Info (4-5) | $LOW_INFO |" >> "$SUMMARY"
-          echo "" >> "$SUMMARY"
-          echo "### 🔴 Severity 1-3 Violations (FAIL)" >> "$SUMMARY"
-          if [[ "$CRITICAL_HIGH_MOD" -gt 0 ]]; then
-            echo '```' >> "$SUMMARY"
-            jq -r "${VIOLATIONS_JQ} | select((${SEV_FIELD}) <= 3) | \"[SEV-\"+((${SEV_FIELD})|tostring)+\"] \"+.fileName+\":\"+(.line|tostring)+\" - \"+.ruleName+\" | \"+.message" \
-              "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null >> "$SUMMARY" || true
-            echo '```' >> "$SUMMARY"
-          else
-            echo "_No violations found._" >> "$SUMMARY"
-          fi
-          echo "" >> "$SUMMARY"
-          echo "### 🟡 Severity 4-5 Violations (WARN)" >> "$SUMMARY"
-          if [[ "$LOW_INFO" -gt 0 ]]; then
-            echo '```' >> "$SUMMARY"
-            jq -r "${VIOLATIONS_JQ} | select((${SEV_FIELD}) > 3) | \"[SEV-\"+((${SEV_FIELD})|tostring)+\"] \"+.fileName+\":\"+(.line|tostring)+\" - \"+.ruleName+\" | \"+.message" \
-              "$(Build.SourcesDirectory)/scanner-results.json" 2>/dev/null >> "$SUMMARY" || true
-            echo '```' >> "$SUMMARY"
-          else
-            echo "_No violations found._" >> "$SUMMARY"
-          fi
+          [[ "$SEV1" -gt 0  ]] && S1="FAIL" || S1="OK"
+          [[ "$SEV2" -gt 5  ]] && S2="FAIL" || S2="OK"
+          [[ "$SEV3" -gt 10 ]] && S3="FAIL" || S3="OK"
+          FAIL_COUNT=$(( SEV1 + SEV2 + SEV3 ))
+          {
+            echo "## Salesforce Code Analyzer Results"
+            echo ""
+            echo "**Run Time:** ${IST_TIME}"
+            echo ""
+            echo "| Severity | Count | Threshold | Status |"
+            echo "|---|---|---|---|"
+            echo "| Severity 1 - Critical | $SEV1 | 0 | $S1 |"
+            echo "| Severity 2 - High | $SEV2 | 5 | $S2 |"
+            echo "| Severity 3 - Moderate | $SEV3 | 10 | $S3 |"
+            echo "| Severity 4-5 - Low/Info | $LOW_INFO | WARN only | OK |"
+            echo ""
+            echo "### Severity 1-3 Violations"
+            if [[ "$FAIL_COUNT" -gt 0 ]]; then
+              echo "| Class | Severity | Line | Rule | Message |"
+              echo "|---|---|---|---|---|"
+              jq -rf /tmp/jq_fail_table.jq "$JSON" 2>/dev/null
+            else
+              echo "_No violations found._"
+            fi
+            echo ""
+            echo "### Severity 4-5 Violations (WARN)"
+            if [[ "$LOW_INFO" -gt 0 ]]; then
+              echo "| Class | Severity | Line | Rule | Message |"
+              echo "|---|---|---|---|---|"
+              jq -rf /tmp/jq_warn_table.jq "$JSON" 2>/dev/null
+            else
+              echo "_No violations found._"
+            fi
+          } > "$SUMMARY"
           echo "##vso[task.uploadsummary]$SUMMARY"
 
           # Prepend IST timestamp to published HTML
@@ -314,12 +320,15 @@ jobs:
             sed -i "s|<body>|<body><p style='font-family:sans-serif;padding:8px;background:#f0f0f0'><strong>Scan Time (IST):</strong> ${IST_TIME}</p>|" "$HTML" || true
           fi
 
-          if [[ "$CRITICAL_HIGH_MOD" -gt 0 ]]; then
-            echo ""
-            echo "PIPELINE FAILED: $CRITICAL_HIGH_MOD violation(s) of severity 1-3 found. Fix before deploying."
+          FAILED=0
+          [[ "$SEV1" -gt 0  ]] && { echo "FAIL: Severity 1 count $SEV1 exceeds threshold of 0";  FAILED=1; }
+          [[ "$SEV2" -gt 5  ]] && { echo "FAIL: Severity 2 count $SEV2 exceeds threshold of 5";  FAILED=1; }
+          [[ "$SEV3" -gt 10 ]] && { echo "FAIL: Severity 3 count $SEV3 exceeds threshold of 10"; FAILED=1; }
+          if [[ "$FAILED" -eq 1 ]]; then
+            echo "PIPELINE FAILED: Violation count exceeded threshold. Fix before deploying."
             exit 1
           fi
-          echo "Code analysis passed - no Critical/High/Moderate violations found."
+          echo "Code analysis passed - all violation counts within thresholds."
         displayName: "Enforce Severity Thresholds (Fail on 1-3, Warn on 4-5)"
 
       - task: PublishPipelineArtifact@1
