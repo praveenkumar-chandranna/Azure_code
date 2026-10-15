@@ -307,11 +307,11 @@ jobs:
       # ── Coverage check post-validation (reads from local results dir) ───────
       - script: |
           APEX_CLASSES=""
-          if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
-            APEX_CLASSES=$(paste -sd ',' "$(TC_PATH)")
+          if [[ -f "$(MC_PATH)" && -s "$(MC_PATH)" ]]; then
+            APEX_CLASSES=$(paste -sd ',' "$(MC_PATH)")
           fi
           if [[ -z "$APEX_CLASSES" ]]; then
-            echo "No test classes in delta - skipping coverage check"
+            echo "No main classes in delta - skipping coverage check"
             exit 0
           fi
           echo "Checking coverage for: $APEX_CLASSES"
@@ -361,17 +361,17 @@ jobs:
       # ── Coverage check post-deployment ───────────────────────────────────
       - script: |
           APEX_CLASSES=""
-          if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
-            APEX_CLASSES=$(paste -sd ',' "$(TC_PATH)")
+          if [[ -f "$(MC_PATH)" && -s "$(MC_PATH)" ]]; then
+            APEX_CLASSES=$(paste -sd ',' "$(MC_PATH)")
           fi
           if [[ -z "$APEX_CLASSES" ]]; then
-            echo "No test classes in delta - skipping coverage check"
+            echo "No main classes in delta - skipping coverage check"
             exit 0
           fi
           echo "Checking coverage for: $APEX_CLASSES"
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
-            --mode org \
-            --username "$(SF_USERNAME)" \
+            --mode local \
+            --results-dir "$(Build.SourcesDirectory)/test-results" \
             --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Coverage (Post-Deployment)"
         condition: and(succeeded(), ne(variables['TEST_LEVEL'], 'NoTestRun'))
@@ -380,7 +380,7 @@ jobs:
           DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
           git config user.email "$(GIT_USER_EMAIL)"
           git config user.name  "$(GIT_USER_NAME)"
-          git fetch --tags | sort -V | tail -1)
+          EXISTING=$(git tag -l "PROD_*" | sort -V | tail -1)
           if [[ -z "$EXISTING" ]]; then
             NEXT_VERSION="v0.1"
           else

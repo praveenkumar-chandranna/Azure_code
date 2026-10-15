@@ -353,11 +353,11 @@ jobs:
       # ── Coverage check scoped to delta classes only ─────────────────────────
       - script: |
           APEX_CLASSES=""
-          if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
-            APEX_CLASSES=$(paste -sd ',' "$(TC_PATH)")
+          if [[ -f "$(MC_PATH)" && -s "$(MC_PATH)" ]]; then
+            APEX_CLASSES=$(paste -sd ',' "$(MC_PATH)")
           fi
           if [[ -z "$APEX_CLASSES" ]]; then
-            echo "No test classes in delta - skipping per-class coverage check"
+            echo "No main classes in delta - skipping per-class coverage check"
             exit 0
           fi
           echo "Checking coverage for delta classes: $APEX_CLASSES"
