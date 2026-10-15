@@ -114,14 +114,39 @@ jobs:
 
       # ── Delta package generation from git diff ──────────────────────────────
       - script: |
-          git fetch --all
-          echo "Computing delta: last merge into $(TARGET_BRANCH)"
+          git fetch origin $(SOURCE_BRANCH):refs/remotes/origin/$(SOURCE_BRANCH)
+          git fetch origin $(TARGET_BRANCH):refs/remotes/origin/$(TARGET_BRANCH)
+          git fetch --tags
           rm -f /tmp/changed_files.txt
-          CHANGED=$(git diff --name-only origin/$(TARGET_BRANCH)~1 origin/$(TARGET_BRANCH) -- force-app/ 2>/dev/null || echo "")
+
+          # Last successful deployment tag for this environment
+          LAST_SUCCESS_TAG=$(git tag -l "DEPLOYED_$(ENVIRONMENT)_*" | sort -V | tail -1)
+
+          if [[ -n "$LAST_SUCCESS_TAG" ]]; then
+            LAST_SUCCESS_COMMIT=$(git rev-parse "$LAST_SUCCESS_TAG")
+            echo "Last successful deployment tag : $LAST_SUCCESS_TAG"
+            echo "Last successful deployment SHA : $LAST_SUCCESS_COMMIT"
+            CHANGED=$(git diff --name-only "$LAST_SUCCESS_COMMIT" origin/$(TARGET_BRANCH) -- force-app/)
+          else
+            echo "No previous deployment tag found - using last merge commit diff"
+            MERGE_COMMIT=$(git log origin/$(TARGET_BRANCH) --merges --first-parent \
+              --grep="$(SOURCE_BRANCH)" --format="%H" -1 2>/dev/null)
+            if [[ -z "$MERGE_COMMIT" ]]; then
+              MERGE_COMMIT=$(git log origin/$(TARGET_BRANCH) --merges --first-parent \
+                --format="%H" -1 2>/dev/null)
+            fi
+            if [[ -z "$MERGE_COMMIT" ]]; then
+              echo "ERROR: No merge commit found on $(TARGET_BRANCH)"
+              exit 1
+            fi
+            echo "Last merge commit: $MERGE_COMMIT"
+            CHANGED=$(git diff --name-only "${MERGE_COMMIT}^1" "${MERGE_COMMIT}" -- force-app/)
+          fi
+
           echo "Changed files:"
           echo "$CHANGED"
           if [[ -z "$CHANGED" ]]; then
-            echo "ERROR: No force-app/ changes detected in last merge to $(TARGET_BRANCH) - nothing to deploy"
+            echo "ERROR: No force-app/ changes detected - nothing to deploy"
             exit 1
           fi
           echo "#BUILD_ID=$(Build.BuildId)" > /tmp/changed_files.txt
@@ -331,6 +356,23 @@ jobs:
             --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Coverage (Post-Deployment)"
         condition: and(succeeded(), ne(variables['TEST_LEVEL'], 'NoTestRun'))
+
+      # ── Tag successful deployment for delta tracking on retry ─────────────────
+      - script: |
+          git config user.email "$(GIT_USER_EMAIL)"
+          git config user.name  "$(GIT_USER_NAME)"
+          git fetch --tags
+          # Remove previous tag for this environment and replace with current commit
+          PREV_TAG=$(git tag -l "DEPLOYED_$(ENVIRONMENT)_*" | sort -V | tail -1)
+          if [[ -n "$PREV_TAG" ]]; then
+            git tag -d "$PREV_TAG" || true
+            git push origin ":refs/tags/$PREV_TAG" || true
+          fi
+          TAG_NAME="DEPLOYED_$(ENVIRONMENT)_$(Build.BuildId)"
+          git tag -a "$TAG_NAME" -m "Successful $(ENVIRONMENT) deployment - Build $(Build.BuildId)" origin/$(TARGET_BRANCH)
+          git push origin "$TAG_NAME"
+          echo "Deployment tag created: $TAG_NAME"
+        displayName: "Tag Successful Deployment"
 
       - script: |
           DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')

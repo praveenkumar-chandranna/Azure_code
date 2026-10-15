@@ -56,6 +56,14 @@ for f in changed_files:
     meta_type = TYPE_MAP.get(folder)
     if not meta_type:
         continue
+    # Static resources: only the -meta.xml descriptor or bare .resource file counts.
+    # Skip inner asset files (any extension) nested inside a resource folder,
+    # and skip flat asset files (.png, .zip, .js, etc.) that sit alongside the descriptor.
+    if folder == "staticresources":
+        if len(parts) > 2:
+            continue  # nested asset inside resource folder
+        if not re.search(r'(\.resource-meta\.xml|\.resource)$', filename):
+            continue  # flat asset file (e.g. MyResource.png, MyResource.zip)
     member = re.sub(r'\.[a-zA-Z]+-meta\.xml$|-meta\.xml$|\.xml$|\.cls$|\.trigger$|\.page$|\.component$|\.resource$', '', filename)
     if folder in ("lwc", "aura"):
         member = parts[1]

@@ -144,21 +144,37 @@ jobs:
 
       # ── Delta package generation from git diff ──────────────────────────────
       - script: |
-          git fetch origin $(SOURCE_BRANCH):refs/remotes/origin/$(SOURCE_BRANCH)
-          git fetch origin $(DEST_BRANCH):refs/remotes/origin/$(DEST_BRANCH)
-          echo "Computing delta: $(SOURCE_BRANCH) vs $(DEST_BRANCH)"
           rm -f /tmp/changed_files.txt
 
-          MERGE_BASE=$(git merge-base origin/$(DEST_BRANCH) origin/$(SOURCE_BRANCH) 2>/dev/null)
+          # Fetch destination branch and the exact PR source commit
+          git fetch origin $(DEST_BRANCH):refs/remotes/origin/$(DEST_BRANCH)
+          git fetch origin $(SOURCE_BRANCH):refs/remotes/origin/$(SOURCE_BRANCH)
+
+          # Verify PR_SOURCE_COMMIT is set and reachable
+          if [[ -z "$PR_SOURCE_COMMIT" ]]; then
+            echo "ERROR: PR_SOURCE_COMMIT is empty - not running in a PR context?"
+            exit 1
+          fi
+
+          # Ensure the exact PR head SHA is locally available
+          git fetch origin "$PR_SOURCE_COMMIT" 2>/dev/null || true
+          if ! git cat-file -e "$PR_SOURCE_COMMIT^{commit}" 2>/dev/null; then
+            echo "ERROR: PR head commit $PR_SOURCE_COMMIT not found in repo after fetch"
+            exit 1
+          fi
+          echo "PR head commit: $PR_SOURCE_COMMIT"
+
+          MERGE_BASE=$(git merge-base origin/$(DEST_BRANCH) "$PR_SOURCE_COMMIT")
           if [[ -z "$MERGE_BASE" ]]; then
-            echo "ERROR: Could not find merge base between $(SOURCE_BRANCH) and $(DEST_BRANCH)"
+            echo "ERROR: Could not find merge base between $(DEST_BRANCH) and $PR_SOURCE_COMMIT"
             exit 1
           fi
           echo "Merge base: $MERGE_BASE"
+          echo "Diff range: $MERGE_BASE..$PR_SOURCE_COMMIT"
 
-          ALL_CHANGED=$(git diff --name-only "$MERGE_BASE" origin/$(SOURCE_BRANCH))
+          ALL_CHANGED=$(git diff --name-only "$MERGE_BASE" "$PR_SOURCE_COMMIT")
           if [[ -z "$ALL_CHANGED" ]]; then
-            echo "ERROR: No difference found between $(SOURCE_BRANCH) and $(DEST_BRANCH) - branches are identical, nothing to validate"
+            echo "ERROR: No difference found - branches are identical, nothing to validate"
             exit 1
           fi
           echo "All changed files in PR:"
@@ -171,11 +187,12 @@ jobs:
           fi
           echo "Salesforce changed files:"
           echo "$CHANGED"
-          # Write build ID as first line so gen_artifacts.py can verify freshness
           echo "#BUILD_ID=$(Build.BuildId)" > /tmp/changed_files.txt
           echo "$CHANGED" >> /tmp/changed_files.txt
           echo "##vso[task.setvariable variable=HAS_CHANGES]true"
         displayName: "Compute Delta Changed Files"
+        env:
+          PR_SOURCE_COMMIT: $(System.PullRequest.SourceCommitId)
 
       - script: |
           python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
