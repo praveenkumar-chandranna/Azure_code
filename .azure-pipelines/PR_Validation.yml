@@ -25,7 +25,7 @@ jobs:
           DEST_BRANCH="${DEST_BRANCH##refs/heads/}"
           echo "PR: $SOURCE_BRANCH -> $DEST_BRANCH"
 
-          # Enforce valid pairs only: dev->QA, QA->UAT, UAT->master
+          # Enforce valid pairs only: Dev->QA, QA->UAT, UAT->master
           VALID="false"
           if [[ "$SOURCE_BRANCH" == "Dev"  && "$DEST_BRANCH" == "QA"     ]]; then VALID="true"; fi
           if [[ "$SOURCE_BRANCH" == "QA"   && "$DEST_BRANCH" == "UAT"    ]]; then VALID="true"; fi
@@ -33,7 +33,7 @@ jobs:
 
           if [[ "$VALID" == "false" ]]; then
             echo "ERROR: Invalid PR branch pair '$SOURCE_BRANCH -> $DEST_BRANCH'"
-            echo "Allowed pairs: dev->QA | QA->UAT | UAT->master"
+            echo "Allowed pairs: Dev->QA | QA->UAT | UAT->master"
             echo "##vso[task.setvariable variable=should_validate;isOutput=true]false"
             echo "##vso[task.setvariable variable=invalid_pair;isOutput=true]true"
           else
@@ -56,7 +56,7 @@ jobs:
           echo "Allowed: Dev->QA | QA->UAT | UAT->master"
           echo "Please close this PR and raise from the correct branch"
           echo "=============================================="
-        displayName: "Notify - Invalid Branch Pair (Warning Only)"
+        displayName: "Notify - Invalid Branch Pair "
 
   - job: Pre_Validation_Build
     displayName: "Pre Validation Build"
@@ -67,15 +67,19 @@ jobs:
         fetchDepth: 0
         persistCredentials: true
 
-      - task: NodeTool@1
-        displayName: "Setup Node.js"
+      - task: UseNode@1
+        displayName: "Setup Node.js 22"
         inputs:
-          versionSpec: "22.x"
+          versionSource: 'spec'
+          version: '22.x'
 
       - script: |
-          npm install -g @salesforce/cli
-          sf --version
-        displayName: "Install Salesforce CLI"
+          npm uninstall -g @salesforce/cli || true
+
+          npm install -g @salesforce/cli@latest
+
+          sf version
+        displayName: "Install Latest Salesforce CLI"
 
       - task: DownloadSecureFile@1
         name: jwtKey
@@ -385,7 +389,8 @@ jobs:
           RESULTS_DIR="$(Build.SourcesDirectory)/test-results"
           mkdir -p "$RESULTS_DIR"
           read -ra tests_array <<< "$(TEST_CLASSES)"
-          CMD=(sf project deploy validate \
+          CMD=(sf project deploy start \
+            --dry-run \
             --target-org "$(SF_USERNAME)" \
             --manifest "$(PACKAGE_PATH)" \
             --wait 60 \

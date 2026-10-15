@@ -3,7 +3,7 @@ trigger: none
 parameters:
   - name: Feature_Branch
     type: string
-    displayName: "Source branch to deploy from (e.g. dev, QA, UAT, master)"
+    displayName: "Source branch to deploy from (e.g. Dev, QA, UAT, master)"
   - name: environment
     type: string
     displayName: "Target deployment environment"
@@ -62,15 +62,19 @@ jobs:
         fetchDepth: 0
         persistCredentials: true
 
-      - task: NodeTool@0
-        displayName: "Setup Node.js"
+      - task: UseNode@1
+        displayName: "Setup Node.js 22"
         inputs:
-          versionSpec: "22.x"
+          versionSource: 'spec'
+          version: '22.x'
 
       - script: |
+          npm uninstall -g @salesforce/cli || true
+
           npm install -g @salesforce/cli@latest
-          sf --version
-        displayName: "Install Salesforce CLI"
+
+          sf version
+        displayName: "Install Latest Salesforce CLI"
 
       - task: DownloadSecureFile@1
         name: jwtKey
@@ -343,7 +347,8 @@ jobs:
           set +e
           RESULTS_DIR="$(Build.SourcesDirectory)/test-results"
           mkdir -p "$RESULTS_DIR"
-          CMD=(sf project deploy validate \
+          CMD=(sf project deploy start \
+            --dry-run \
             --manifest "$(MANIFEST_PATH)" \
             --target-org "$(SF_USERNAME)" \
             --test-level "$(TEST_LEVEL)" \
