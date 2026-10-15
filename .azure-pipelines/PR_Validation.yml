@@ -362,6 +362,7 @@ jobs:
           fi
           echo "Checking coverage for delta classes: $APEX_CLASSES"
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+            --mode local \
             --results-dir "$(Build.SourcesDirectory)/test-results" \
             --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Apex Code Coverage (Delta Classes Only)"

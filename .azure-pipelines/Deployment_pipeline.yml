@@ -60,6 +60,7 @@ jobs:
 
       - checkout: self
         fetchDepth: 0
+        persistCredentials: true
 
       - task: NodeTool@0
         displayName: "Setup Node.js"
@@ -315,6 +316,7 @@ jobs:
           fi
           echo "Checking coverage for: $APEX_CLASSES"
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+            --mode local \
             --results-dir "$(Build.SourcesDirectory)/test-results" \
             --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Coverage (Post-Validation)"
@@ -340,7 +342,23 @@ jobs:
           echo "DEPLOYMENT SUCCEEDED"
         displayName: "Deploy Delta to Salesforce Org"
 
-      # ── Coverage check post-deployment (reads from org via SOQL) ───────────
+      # ── Tag successful deployment immediately after deploy ─────────────────
+      - script: |
+          git config user.email "$(GIT_USER_EMAIL)"
+          git config user.name  "$(GIT_USER_NAME)"
+          git fetch --tags
+          PREV_TAG=$(git tag -l "DEPLOYED_$(ENVIRONMENT)_*" | sort -V | tail -1)
+          if [[ -n "$PREV_TAG" ]]; then
+            git tag -d "$PREV_TAG" 2>/dev/null || true
+            git push origin ":refs/tags/$PREV_TAG" 2>/dev/null || true
+          fi
+          TAG_NAME="DEPLOYED_$(ENVIRONMENT)_$(Build.BuildId)"
+          git tag -a "$TAG_NAME" -m "Successful $(ENVIRONMENT) deployment - Build $(Build.BuildId)" origin/$(TARGET_BRANCH)
+          git push origin "$TAG_NAME"
+          echo "Deployment tag created: $TAG_NAME"
+        displayName: "Tag Successful Deployment"
+
+      # ── Coverage check post-deployment ───────────────────────────────────
       - script: |
           APEX_CLASSES=""
           if [[ -f "$(TC_PATH)" && -s "$(TC_PATH)" ]]; then
@@ -352,34 +370,17 @@ jobs:
           fi
           echo "Checking coverage for: $APEX_CLASSES"
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
-            --results-dir "$(Build.SourcesDirectory)/test-results" \
+            --mode org \
+            --username "$(SF_USERNAME)" \
             --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Coverage (Post-Deployment)"
         condition: and(succeeded(), ne(variables['TEST_LEVEL'], 'NoTestRun'))
-
-      # ── Tag successful deployment for delta tracking on retry ─────────────────
-      - script: |
-          git config user.email "$(GIT_USER_EMAIL)"
-          git config user.name  "$(GIT_USER_NAME)"
-          git fetch --tags
-          # Remove previous tag for this environment and replace with current commit
-          PREV_TAG=$(git tag -l "DEPLOYED_$(ENVIRONMENT)_*" | sort -V | tail -1)
-          if [[ -n "$PREV_TAG" ]]; then
-            git tag -d "$PREV_TAG" || true
-            git push origin ":refs/tags/$PREV_TAG" || true
-          fi
-          TAG_NAME="DEPLOYED_$(ENVIRONMENT)_$(Build.BuildId)"
-          git tag -a "$TAG_NAME" -m "Successful $(ENVIRONMENT) deployment - Build $(Build.BuildId)" origin/$(TARGET_BRANCH)
-          git push origin "$TAG_NAME"
-          echo "Deployment tag created: $TAG_NAME"
-        displayName: "Tag Successful Deployment"
 
       - script: |
           DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
           git config user.email "$(GIT_USER_EMAIL)"
           git config user.name  "$(GIT_USER_NAME)"
-          git fetch --tags
-          EXISTING=$(git tag -l "PROD_${DATE_SUFFIX}_v*" | sort -V | tail -1)
+          git fetch --tags | sort -V | tail -1)
           if [[ -z "$EXISTING" ]]; then
             NEXT_VERSION="v0.1"
           else
