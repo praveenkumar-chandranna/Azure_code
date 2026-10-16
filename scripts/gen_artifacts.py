@@ -20,107 +20,270 @@ with open("/tmp/changed_files.txt") as f:
     changed_files = [l.strip() for l in f if l.strip() and not l.startswith("#")]
 
 TYPE_MAP = {
-    # Apex / UI
-    "classes":                       "ApexClass",
-    "triggers":                      "ApexTrigger",
-    "pages":                         "ApexPage",
-    "components":                    "ApexComponent",
-    "lwc":                           "LightningComponentBundle",
-    "aura":                          "AuraDefinitionBundle",
-    "flexipages":                    "FlexiPage",
-    "staticresources":               "StaticResource",
-    "contentassets":                 "ContentAsset",
-    # Objects
-    "objects":                       "CustomObject",
-    "layouts":                       "Layout",
-    "quickActions":                  "QuickAction",
-    "compactLayouts":                "CompactLayout",
-    "globalValueSets":               "GlobalValueSet",
-    "standardValueSets":             "StandardValueSet",
-    "duplicateRules":                "DuplicateRule",
-    "matchingRules":                 "MatchingRules",
-    "sharingRules":                  "SharingRules",
-    "assignmentRules":               "AssignmentRules",
-    "autoResponseRules":             "AutoResponseRules",
-    "escalationRules":               "EscalationRules",
-    "approvalProcesses":             "ApprovalProcess",
-    "pathAssistants":                "PathAssistant",
-    # Automation
-    "flows":                         "Flow",
-    "flowCategories":                "FlowCategory",
-    "flowDefinitions":               "FlowDefinition",
-    "workflows":                     "Workflow",
-    # Permissions & security
-    "permissionsets":                "PermissionSet",
-    "permissionsetgroups":           "PermissionSetGroup",
-    "profiles":                      "Profile",
-    "userAccessPolicies":            "UserAccessPolicy",
-    "useraccesspolicies":             "UserAccessPolicy",
-    "cspTrustedSites":               "CspTrustedSite",
-    "remoteSiteSettings":            "RemoteSiteSetting",
-    "corsWhitelistOrigins":          "CorsWhitelistOrigin",
-    "connectedApps":                 "ConnectedApp",
-    "authproviders":                 "AuthProvider",
-    "namedCredentials":              "NamedCredential",
-    "externalCredentials":           "ExternalCredential",
-    "certificates":                  "Certificate",
-    # Org config
-    "settings":                      "Settings",
-    "tabs":                          "CustomTab",
-    "applications":                  "CustomApplication",
-    "customMetadata":                "CustomMetadata",
-    "actionLinkGroupTemplates":      "ActionLinkGroupTemplate",
-    "homePageComponents":            "HomePageComponent",
-    "homePageLayouts":               "HomePageLayout",
-    # Labels & translations
-    "labels":                        "CustomLabels",
-    "translations":                  "Translations",
-    "globalValueSetTranslations":    "GlobalValueSetTranslation",
-    "standardValueSetTranslations":  "StandardValueSetTranslation",
-    # Org structure
-    "queues":                        "Queue",
-    "groups":                        "Group",
-    "roles":                         "Role",
-    # Integration
-    "dataSources":                   "ExternalDataSource",
-    "externalServiceRegistrations":  "ExternalServiceRegistration",
-    "platformEventChannels":         "PlatformEventChannel",
-    "platformEventChannelMembers":   "PlatformEventChannelMember",
-    "messageChannels":               "LightningMessageChannel",
-    # Analytics
-    "reportTypes":                   "ReportType",
-    "analyticSnapshots":             "AnalyticSnapshot",
-    # Communities / Experience Cloud
-    "experiences":                   "ExperienceBundle",
-    "networks":                      "Network",
-    "networkBranding":               "NetworkBranding",
-    "managedTopics":                 "ManagedTopic",
-    "sites":                         "CustomSite",
-    "communities":                   "Community",
-    # Notifications
-    "notificationtypes":             "CustomNotificationType",
-    # Service Cloud
-    "callCenters":                   "CallCenter",
-    "serviceChannels":               "ServiceChannel",
-    "servicePresenceStatuses":       "ServicePresenceStatus",
-    "presenceDeclineReasons":        "PresenceDeclineReason",
-    "presenceUserConfigs":           "PresenceUserConfig",
-    "routingConfigurations":         "RoutingConfiguration",
-    "queueRoutingConfigs":           "QueueRoutingConfig",
-    "skills":                        "Skill",
-    "milestoneTypes":                "MilestoneType",
-    "entitlementProcesses":          "EntitlementProcess",
-    "entitlementTemplates":          "EntitlementTemplate",
-    "slaProcesses":                  "SlaProcess",
-    # Field Service
-    "appointmentSchedulingPolicies": "AppointmentSchedulingPolicy",
-    "workTypes":                     "WorkType",
-    "workTypeGroups":                "WorkTypeGroup",
-    "operatingHours":                "OperatingHours",
-    # Bots
-    "bots":                          "Bot",
-    # Territory 2.0
-    "territory2Models":              "Territory2Model",
+    # ── Apex & UI Components ──────────────────────────────────────────────────
+    "classes":                            "ApexClass",
+    "triggers":                           "ApexTrigger",
+    "pages":                              "ApexPage",
+    "components":                         "ApexComponent",
+    "lwc":                                "LightningComponentBundle",
+    "aura":                               "AuraDefinitionBundle",
+    "flexipages":                         "FlexiPage",
+    "staticresources":                    "StaticResource",
+    "contentassets":                      "ContentAsset",
+    # ── Objects & Fields ─────────────────────────────────────────────────────
+    "objects":                            "CustomObject",
+    "layouts":                            "Layout",
+    "quickActions":                       "QuickAction",
+    "globalValueSets":                    "GlobalValueSet",
+    "standardValueSets":                  "StandardValueSet",
+    "duplicateRules":                     "DuplicateRule",
+    "matchingRules":                      "MatchingRule",
+    "sharingRules":                       "SharingRules",
+    "assignmentRules":                    "AssignmentRules",
+    "autoResponseRules":                  "AutoResponseRules",
+    "escalationRules":                    "EscalationRules",
+    "approvalProcesses":                  "ApprovalProcess",
+    "pathAssistants":                     "PathAssistant",
+    "compactLayouts":                     "CompactLayout",
+    "fieldSets":                          "FieldSet",
+    "listViews":                          "ListView",
+    "recordTypes":                        "RecordType",
+    "validationRules":                    "ValidationRule",
+    "webLinks":                           "WebLink",
+    "businessProcesses":                  "BusinessProcess",
+    "indexes":                            "Index",
+    "sharingReasons":                     "SharingReason",
+    # ── Automation ───────────────────────────────────────────────────────────
+    "flows":                              "Flow",
+    "flowCategories":                     "FlowCategory",
+    "flowDefinitions":                    "FlowDefinition",
+    "workflows":                          "Workflow",
+    "processMetadataValues":              "ProcessMetadataValue",
+    # ── Permissions & Security ───────────────────────────────────────────────
+    "permissionsets":                     "PermissionSet",
+    "permissionsetgroups":                "PermissionSetGroup",
+    "permissionSetLicenseDefinitions":    "PermissionSetLicenseDefinition",
+    "profiles":                           "Profile",
+    "userAccessPolicies":                 "UserAccessPolicy",
+    "useraccesspolicies":                 "UserAccessPolicy",
+    "cspTrustedSites":                    "CspTrustedSite",
+    "remoteSiteSettings":                 "RemoteSiteSetting",
+    "corsWhitelistOrigins":               "CorsWhitelistOrigin",
+    "connectedApps":                      "ConnectedApp",
+    "authproviders":                      "AuthProvider",
+    "namedCredentials":                   "NamedCredential",
+    "externalCredentials":                "ExternalCredential",
+    "certificates":                       "Certificate",
+    "mutingPermissionSets":               "MutingPermissionSet",
+    "restrictionRules":                   "RestrictionRule",
+    "sharingCriteriaRules":               "SharingCriteriaRule",
+    "sharingOwnerRules":                  "SharingOwnerRule",
+    "sharingGuestRules":                  "SharingGuestRule",
+    "sharingTerritoryRules":              "SharingTerritoryRule",
+    # ── Org Configuration ────────────────────────────────────────────────────
+    "settings":                           "Settings",
+    "tabs":                               "CustomTab",
+    "applications":                       "CustomApplication",
+    "customMetadata":                     "CustomMetadata",
+    "actionLinkGroupTemplates":           "ActionLinkGroupTemplate",
+    "homePageComponents":                 "HomePageComponent",
+    "homePageLayouts":                    "HomePageLayout",
+    "customPermissions":                  "CustomPermission",
+    "featureParameters":                  "FeatureParameter",
+    "featureParameterBoolean":            "FeatureParameterBoolean",
+    "featureParameterDate":               "FeatureParameterDate",
+    "featureParameterInteger":            "FeatureParameterInteger",
+    "territory2Settings":                 "Territory2Settings",
+    "myDomainDiscoverableLogin":          "MyDomainDiscoverableLogin",
+    "oauthCustomScopes":                  "OauthCustomScope",
+    "oauthCustomScopeAccesses":           "OauthCustomScopeAccess",
+    "userProvisioningConfigs":            "UserProvisioningConfig",
+    "userCriteria":                       "UserCriteria",
+    "cleanDataServices":                  "CleanDataService",
+    "dataCategoryGroups":                 "DataCategoryGroup",
+    "dataWeaveResources":                 "DataWeaveResource",
+    "apexEmailNotifications":             "ApexEmailNotification",
+    "postTemplates":                      "PostTemplate",
+    "animationRules":                     "AnimationRule",
+    "aiApplications":                     "AIApplication",
+    "aiApplicationConfigs":               "AIApplicationConfig",
+    "aiScoringModelDefinitions":          "AIScoringModelDefinition",
+    "mlPredictionDefinitions":            "MLPredictionDefinition",
+    "mlDataDefinitions":                  "MLDataDefinition",
+    # ── Labels & Translations ────────────────────────────────────────────────
+    "labels":                             "CustomLabels",
+    "translations":                       "Translations",
+    "globalValueSetTranslations":         "GlobalValueSetTranslation",
+    "standardValueSetTranslations":       "StandardValueSetTranslation",
+    "objectTranslations":                 "CustomObjectTranslation",
+    # ── Org Structure ────────────────────────────────────────────────────────
+    "queues":                             "Queue",
+    "groups":                             "Group",
+    "roles":                              "Role",
+    "businessHours":                      "BusinessHours",
+    "holidays":                           "Holiday",
+    "territories":                        "Territory",
+    # ── Integration & APIs ───────────────────────────────────────────────────
+    "dataSources":                        "ExternalDataSource",
+    "externalServiceRegistrations":       "ExternalServiceRegistration",
+    "platformEventChannels":              "PlatformEventChannel",
+    "platformEventChannelMembers":        "PlatformEventChannelMember",
+    "messageChannels":                    "LightningMessageChannel",
+    "eventDeliveries":                    "EventDelivery",
+    "eventSubscriptions":                 "EventSubscription",
+    "integrationHubs":                    "IntegrationHub",
+    "apexTestSuites":                     "ApexTestSuite",
+    # ── Analytics & Reports ──────────────────────────────────────────────────
+    "reportTypes":                        "ReportType",
+    "analyticSnapshots":                  "AnalyticSnapshot",
+    "reports":                            "Report",
+    "dashboards":                         "Dashboard",
+    "analyticsDataflows":                 "DataflowJob",
+    "waveApplications":                   "WaveApplication",
+    "waveDashboards":                     "WaveDashboard",
+    "waveDataflows":                      "WaveDataflow",
+    "waveDatasets":                       "WaveDataset",
+    "waveLenses":                         "WaveLens",
+    "waveRecipes":                        "WaveRecipe",
+    "waveTemplates":                      "WaveTemplateBundle",
+    "waveXmds":                           "WaveXmd",
+    # ── Communities / Experience Cloud ───────────────────────────────────────
+    "experiences":                        "ExperienceBundle",
+    "networks":                           "Network",
+    "networkBranding":                    "NetworkBranding",
+    "managedTopics":                      "ManagedTopic",
+    "sites":                              "CustomSite",
+    "communities":                        "Community",
+    "customHelpMenuSections":             "CustomHelpMenuSection",
+    "navigationMenus":                    "NavigationMenu",
+    "digitalExperienceConfigs":           "DigitalExperienceConfig",
+    "digitalExperienceBundles":           "DigitalExperienceBundle",
+    # ── Notifications ────────────────────────────────────────────────────────
+    "notificationtypes":                  "CustomNotificationType",
+    "notificationTypeConfig":             "CustomNotificationType",
+    "inAppNotificationTemplates":         "InAppNotificationTemplate",
+    # ── Email & Templates ────────────────────────────────────────────────────
+    "emailTemplates":                     "EmailTemplate",
+    "documents":                          "Document",
+    "letterheads":                        "Letterhead",
+    "emailServicesAddresses":             "EmailServicesAddress",
+    "emailServicesConfigs":               "EmailServicesConfig",
+    # ── Service Cloud ────────────────────────────────────────────────────────
+    "callCenters":                        "CallCenter",
+    "serviceChannels":                    "ServiceChannel",
+    "servicePresenceStatuses":            "ServicePresenceStatus",
+    "presenceDeclineReasons":             "PresenceDeclineReason",
+    "presenceUserConfigs":                "PresenceUserConfig",
+    "routingConfigurations":              "RoutingConfiguration",
+    "queueRoutingConfigs":                "QueueRoutingConfig",
+    "skills":                             "Skill",
+    "milestoneTypes":                     "MilestoneType",
+    "entitlementProcesses":               "EntitlementProcess",
+    "entitlementTemplates":               "EntitlementTemplate",
+    "slaProcesses":                       "SlaProcess",
+    "caseSubjectParticles":               "CaseSubjectParticle",
+    "supportFeatureSettings":             "SupportFeatureSetting",
+    "macros":                             "Macro",
+    "macroInstructions":                  "MacroInstruction",
+    # ── Field Service ────────────────────────────────────────────────────────
+    "appointmentSchedulingPolicies":      "AppointmentSchedulingPolicy",
+    "workTypes":                          "WorkType",
+    "workTypeGroups":                     "WorkTypeGroup",
+    "operatingHours":                     "OperatingHours",
+    "serviceAppointmentSettings":         "ServiceAppointmentSettings",
+    "serviceTerritory":                   "ServiceTerritory",
+    "serviceTerritoryMember":             "ServiceTerritoryMember",
+    # ── Bots & Einstein ──────────────────────────────────────────────────────
+    "bots":                               "Bot",
+    "botVersions":                        "BotVersion",
+    "einsteingptPromptTemplates":         "GenAiPromptTemplate",
+    "genAiPlugins":                       "GenAiPlugin",
+    "genAiFunctions":                     "GenAiFunction",
+    "genAiPlanners":                      "GenAiPlanner",
+    # ── Territory 2.0 ────────────────────────────────────────────────────────
+    "territory2Models":                   "Territory2Model",
+    # ── Salesforce CPQ / Industries ──────────────────────────────────────────
+    "decisionMatrices":                   "DecisionMatrix",
+    "decisionMatrixDefinitions":          "DecisionMatrixDefinition",
+    "expressionSetDefinitions":           "ExpressionSetDefinition",
+    "expressionSets":                     "ExpressionSet",
+    "omniDataTransforms":                 "OmniDataTransform",
+    "omniIntegrationProcedures":          "OmniIntegrationProcedure",
+    "omniScripts":                        "OmniScript",
+    "omniUiCards":                        "OmniUiCard",
+    "documentGenerationSettings":         "DocumentGenerationSetting",
+    # ── Slack / Enablement ───────────────────────────────────────────────────
+    "slackApps":                          "SlackApp",
+    "enablementPrograms":                 "EnablementProgram",
+    "enablementMeasureDefinitions":       "EnablementMeasureDefinition",
+    # ── Misc Deployable Types ────────────────────────────────────────────────
+    "audience":                           "Audience",
+    "audiences":                          "Audience",
+    "brandingSets":                       "BrandingSet",
+    "cmsConnectSources":                  "CMSConnectSource",
+    "contentBuilderElements":             "ContentBuilderElement",
+    "conversationMessageDefinitions":     "ConversationMessageDefinition",
+    "conversationVendorInfos":            "ConversationVendorInfo",
+    "customFeedFilters":                  "CustomFeedFilter",
+    "customIndex":                        "CustomIndex",
+    "customObjectTranslations":           "CustomObjectTranslation",
+    "dashboardFolders":                   "DashboardFolder",
+    "documentFolders":                    "DocumentFolder",
+    "emailTemplateFolders":               "EmailTemplateFolder",
+    "embeddedServiceBranding":            "EmbeddedServiceBranding",
+    "embeddedServiceConfig":              "EmbeddedServiceConfig",
+    "embeddedServiceFlowConfig":          "EmbeddedServiceFlowConfig",
+    "embeddedServiceLiveAgent":           "EmbeddedServiceLiveAgent",
+    "embeddedServiceMenuSettings":        "EmbeddedServiceMenuSettings",
+    "experiencePropertyTypeBundles":      "ExperiencePropertyTypeBundle",
+    "externalApplications":               "ExternalApplication",
+    "externalDataConnectors":             "ExternalDataConnector",
+    "flowTests":                          "FlowTest",
+    "identityVerificationProcDefs":       "IdentityVerificationProcDef",
+    "inboundNetworkConnections":          "InboundNetworkConnection",
+    "inboundNetworkPolicies":             "InboundNetworkPolicy",
+    "installedPackages":                  "InstalledPackage",
+    "ipAddressRanges":                    "IpAddressRange",
+    "keywordLists":                       "KeywordList",
+    "liveChatAgentConfigs":               "LiveChatAgentConfig",
+    "liveChatButtons":                    "LiveChatButton",
+    "liveChatDeployments":                "LiveChatDeployment",
+    "liveChatSensitiveDataRules":         "LiveChatSensitiveDataRule",
+    "managedContentTypes":                "ManagedContentType",
+    "marketingAppExtensions":             "MarketingAppExtension",
+    "mobileApplicationDetails":           "MobileApplicationDetail",
+    "moderationRules":                    "ModerationRule",
+    "outboundNetworkConnections":         "OutboundNetworkConnection",
+    "packageVersions":                    "PackageVersion",
+    "paymentGatewayProviders":            "PaymentGatewayProvider",
+    "recommendationStrategies":           "RecommendationStrategy",
+    "redirectWhitelistUrls":              "RedirectWhitelistUrl",
+    "reportFolders":                      "ReportFolder",
+    "samlSsoConfigs":                     "SamlSsoConfig",
+    "searchLayouts":                      "SearchLayouts",
+    "serviceAISetupDefinitions":          "ServiceAISetupDefinition",
+    "serviceAISetupFields":               "ServiceAISetupField",
+    "siteSettings":                       "SiteSettings",
+    "socialCustomerServiceSettings":      "SocialCustomerServiceSettings",
+    "synonymDictionaries":                "SynonymDictionary",
+    "topicsForObjects":                   "TopicsForObjects",
+    "transactionSecurityPolicies":        "TransactionSecurityPolicy",
+    "uiObjectRelationConfigs":            "UiObjectRelationConfig",
+    "userEngagementSettings":             "UserEngagementSettings",
+    "userInterfaceSettings":              "UserInterfaceSettings",
+    "waveAnalyticAssetCollections":       "WaveAnalyticAssetCollection",
+    "waveDataConnectors":                 "WaveDataConnector",
+    "webStoreTemplates":                  "WebStoreTemplate",
+    "webStores":                          "WebStore",
+    "workDotComSettings":                 "WorkDotComSettings",
+    "workflowAlerts":                     "WorkflowAlert",
+    "workflowFieldUpdates":               "WorkflowFieldUpdate",
+    "workflowFlowActions":                "WorkflowFlowAction",
+    "workflowKnowledgePublishes":         "WorkflowKnowledgePublish",
+    "workflowOutboundMessages":           "WorkflowOutboundMessage",
+    "workflowRules":                      "WorkflowRule",
+    "workflowSends":                      "WorkflowSend",
+    "workflowTasks":                      "WorkflowTask",
 }
 SUB_TYPE_MAP = {
     "fields":            "CustomField",
@@ -135,38 +298,46 @@ SUB_TYPE_MAP = {
     "sharingReasons":    "SharingReason",
 }
 BUNDLE_TYPES = {"lwc", "aura", "experiences", "networks", "communities"}
-FOLDER_BASED_TYPES = {
-    "reports":        "Report",
-    "dashboards":     "Dashboard",
-    "emailTemplates": "EmailTemplate",
-    "documents":      "Document",
-}
 
 def strip_suffix(name):
-    # Remove known sub-type suffixes before -meta.xml, then fallback
     return re.sub(
         r'\.(field|fields|validationRule|recordType|listView|webLink|compactLayout'
         r'|fieldSet|businessProcess|sharingReason|index'
         r'|layout|flexipage|flow|flowDefinition|flowCategory'
-        r'|permissionset|permissionsetgroup|profile|userAccessPolicy'
+        r'|permissionset|permissionsetgroup|permissionSetLicenseDefinition|profile'
+        r'|userAccessPolicy|useraccesspolicy|mutingPermissionSet|restrictionRule'
         r'|approvalProcess|assignmentRules|autoResponseRules|escalationRules'
-        r'|matchingRule|sharingRules|duplicateRule|pathAssistant|quickAction'
-        r'|workflow|object|tab|customMetadata|namedCredential|connectedApp'
+        r'|matchingRule|sharingRules|sharingCriteriaRule|sharingOwnerRule'
+        r'|sharingGuestRule|sharingTerritoryRule|duplicateRule|pathAssistant|quickAction'
+        r'|workflow|workflowAlert|workflowFieldUpdate|workflowFlowAction'
+        r'|workflowKnowledgePublish|workflowOutboundMessage|workflowRule|workflowSend|workflowTask'
+        r'|object|tab|customMetadata|namedCredential|connectedApp'
         r'|authprovider|remoteSiteSetting|cspTrustedSite|corsWhitelistOrigin'
         r'|externalCredential|certificate|globalValueSet|standardValueSet'
-        r'|globalValueSetTranslation|standardValueSetTranslation|translation'
-        r'|reportType|report|dashboard|emailTemplate|document'
+        r'|globalValueSetTranslation|standardValueSetTranslation|translation|objectTranslation'
+        r'|reportType|report|dashboard|emailTemplate|document|letterhead'
         r'|lightningMessageChannel|experienceBundle|network|networkBranding'
-        r'|managedTopic|customSite|community|notiftype|notificationTypeConfig'
+        r'|managedTopic|customSite|community|notiftype|notificationTypeConfig|customNotificationType'
         r'|callCenter|serviceChannel|servicePresenceStatus|presenceDeclineReason'
         r'|presenceUserConfig|routingConfiguration|queueRoutingConfig'
         r'|skill|milestoneType|entitlementProcess|entitlementTemplate|slaProcess'
         r'|appointmentSchedulingPolicy|workType|workTypeGroup|operatingHours'
-        r'|bot|territory2Model|territory2Type|territory2|territory2Rule'
+        r'|bot|botVersion|territory2Model|territory2Type|territory2|territory2Rule'
         r'|externalDataSource|externalServiceRegistration|platformEventChannel'
         r'|platformEventChannelMember|analyticSnapshot|queue|group|role'
         r'|homePageComponent|homePageLayout|actionLinkGroupTemplate'
-        r'|settings|site|md|resource|asset|cls|trigger|page|component|useraccesspolicy'
+        r'|customPermission|featureParameter|samlSsoConfig|transactionSecurityPolicy'
+        r'|embeddedServiceConfig|embeddedServiceBranding|embeddedServiceFlowConfig'
+        r'|embeddedServiceLiveAgent|embeddedServiceMenuSettings'
+        r'|liveChatAgentConfig|liveChatButton|liveChatDeployment|liveChatSensitiveDataRule'
+        r'|navigationMenu|audience|brandingSet|keywordList|moderationRule|synonymDictionary'
+        r'|topicsForObjects|recommendationStrategy|dataCategoryGroup|dataWeaveResource'
+        r'|omniDataTransform|omniIntegrationProcedure|omniScript|omniUiCard'
+        r'|decisionMatrix|decisionMatrixDefinition|expressionSetDefinition|expressionSet'
+        r'|genAiPromptTemplate|genAiPlugin|genAiFunction|genAiPlanner'
+        r'|waveApplication|waveDashboard|waveDataflow|waveDataset|waveLens|waveRecipe|waveXmd'
+        r'|webStore|webStoreTemplate|slackApp|enablementProgram'
+        r'|settings|site|md|resource|asset|cls|trigger|page|component'
         r')-meta\.xml$'
         r'|-meta\.xml$|\.xml$|\.cls$|\.trigger$|\.page$|\.component$|\.resource$|\.asset$',
         '', name
@@ -187,9 +358,20 @@ for f in changed_files:
     folder, filename = parts[0], parts[1]
 
     # Folder-based (reports, dashboards, emailTemplates, documents)
-    if folder in FOLDER_BASED_TYPES:
+    # Standard package.xml requires: FolderType member = subFolder name
+    #                                 ContentType member = subFolder/memberName
+    FOLDER_TYPE_MAP = {
+        "reports":        ("Report",         "ReportFolder"),
+        "dashboards":     ("Dashboard",      "DashboardFolder"),
+        "emailTemplates": ("EmailTemplate",  "EmailTemplateFolder"),
+        "documents":      ("Document",       "DocumentFolder"),
+    }
+    if folder in FOLDER_TYPE_MAP:
+        content_type, folder_type = FOLDER_TYPE_MAP[folder]
         if len(parts) >= 3:
-            add(FOLDER_BASED_TYPES[folder], f"{parts[1]}/{strip_suffix(parts[2])}")
+            sub_folder = parts[1]
+            add(folder_type, sub_folder)                                    # e.g. ReportFolder -> MyFolder
+            add(content_type, f"{sub_folder}/{strip_suffix(parts[2])}")    # e.g. Report -> MyFolder/MyReport
         continue
 
     # objectTranslations
@@ -259,6 +441,8 @@ for f in changed_files:
     meta_type = TYPE_MAP.get(folder)
     if meta_type:
         add(meta_type, strip_suffix(filename))
+    else:
+        print(f"WARNING: unrecognized folder '{folder}' in path '{f}' – skipped")
 
 if not members_by_type:
     print("WARNING: No metadata members detected – no artifacts generated")
