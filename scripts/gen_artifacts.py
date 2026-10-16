@@ -20,32 +20,164 @@ with open("/tmp/changed_files.txt") as f:
     changed_files = [l.strip() for l in f if l.strip() and not l.startswith("#")]
 
 TYPE_MAP = {
-    "classes": "ApexClass", "triggers": "ApexTrigger",
-    "lwc": "LightningComponentBundle", "aura": "AuraDefinitionBundle",
-    "pages": "ApexPage", "components": "ApexComponent",
-    "flows": "Flow", "objects": "CustomObject", "layouts": "Layout",
-    "permissionsets": "PermissionSet", "profiles": "Profile",
-    "staticresources": "StaticResource", "tabs": "CustomTab",
-    "labels": "CustomLabels", "flexipages": "FlexiPage",
-    "workflows": "Workflow", "assignmentRules": "AssignmentRules",
-    "autoResponseRules": "AutoResponseRules", "escalationRules": "EscalationRules",
-    "queues": "Queue", "groups": "Group", "roles": "Role",
-    "reports": "Report", "dashboards": "Dashboard",
-    "emailTemplates": "EmailTemplate", "messageChannels": "LightningMessageChannel",
-    "customMetadata": "CustomMetadata", "namedCredentials": "NamedCredential",
-    "globalValueSets": "GlobalValueSet", "duplicateRules": "DuplicateRule",
-    "matchingRules": "MatchingRules", "sharingRules": "SharingRules",
-    "pathAssistants": "PathAssistant", "quickActions": "QuickAction",
-    "approvalProcesses": "ApprovalProcess",
+    # Apex / UI
+    "classes":                       "ApexClass",
+    "triggers":                      "ApexTrigger",
+    "pages":                         "ApexPage",
+    "components":                    "ApexComponent",
+    "lwc":                           "LightningComponentBundle",
+    "aura":                          "AuraDefinitionBundle",
+    "flexipages":                    "FlexiPage",
+    "staticresources":               "StaticResource",
+    "contentassets":                 "ContentAsset",
+    # Objects
+    "objects":                       "CustomObject",
+    "layouts":                       "Layout",
+    "quickActions":                  "QuickAction",
+    "compactLayouts":                "CompactLayout",
+    "globalValueSets":               "GlobalValueSet",
+    "standardValueSets":             "StandardValueSet",
+    "duplicateRules":                "DuplicateRule",
+    "matchingRules":                 "MatchingRules",
+    "sharingRules":                  "SharingRules",
+    "assignmentRules":               "AssignmentRules",
+    "autoResponseRules":             "AutoResponseRules",
+    "escalationRules":               "EscalationRules",
+    "approvalProcesses":             "ApprovalProcess",
+    "pathAssistants":                "PathAssistant",
+    # Automation
+    "flows":                         "Flow",
+    "flowCategories":                "FlowCategory",
+    "flowDefinitions":               "FlowDefinition",
+    "workflows":                     "Workflow",
+    # Permissions & security
+    "permissionsets":                "PermissionSet",
+    "permissionsetgroups":           "PermissionSetGroup",
+    "profiles":                      "Profile",
+    "userAccessPolicies":            "UserAccessPolicy",
+    "useraccesspolicies":             "UserAccessPolicy",
+    "cspTrustedSites":               "CspTrustedSite",
+    "remoteSiteSettings":            "RemoteSiteSetting",
+    "corsWhitelistOrigins":          "CorsWhitelistOrigin",
+    "connectedApps":                 "ConnectedApp",
+    "authproviders":                 "AuthProvider",
+    "namedCredentials":              "NamedCredential",
+    "externalCredentials":           "ExternalCredential",
+    "certificates":                  "Certificate",
+    # Org config
+    "settings":                      "Settings",
+    "tabs":                          "CustomTab",
+    "applications":                  "CustomApplication",
+    "customMetadata":                "CustomMetadata",
+    "actionLinkGroupTemplates":      "ActionLinkGroupTemplate",
+    "homePageComponents":            "HomePageComponent",
+    "homePageLayouts":               "HomePageLayout",
+    # Labels & translations
+    "labels":                        "CustomLabels",
+    "translations":                  "Translations",
+    "globalValueSetTranslations":    "GlobalValueSetTranslation",
+    "standardValueSetTranslations":  "StandardValueSetTranslation",
+    # Org structure
+    "queues":                        "Queue",
+    "groups":                        "Group",
+    "roles":                         "Role",
+    # Integration
+    "dataSources":                   "ExternalDataSource",
+    "externalServiceRegistrations":  "ExternalServiceRegistration",
+    "platformEventChannels":         "PlatformEventChannel",
+    "platformEventChannelMembers":   "PlatformEventChannelMember",
+    "messageChannels":               "LightningMessageChannel",
+    # Analytics
+    "reportTypes":                   "ReportType",
+    "analyticSnapshots":             "AnalyticSnapshot",
+    # Communities / Experience Cloud
+    "experiences":                   "ExperienceBundle",
+    "networks":                      "Network",
+    "networkBranding":               "NetworkBranding",
+    "managedTopics":                 "ManagedTopic",
+    "sites":                         "CustomSite",
+    "communities":                   "Community",
+    # Notifications
+    "notificationtypes":             "CustomNotificationType",
+    # Service Cloud
+    "callCenters":                   "CallCenter",
+    "serviceChannels":               "ServiceChannel",
+    "servicePresenceStatuses":       "ServicePresenceStatus",
+    "presenceDeclineReasons":        "PresenceDeclineReason",
+    "presenceUserConfigs":           "PresenceUserConfig",
+    "routingConfigurations":         "RoutingConfiguration",
+    "queueRoutingConfigs":           "QueueRoutingConfig",
+    "skills":                        "Skill",
+    "milestoneTypes":                "MilestoneType",
+    "entitlementProcesses":          "EntitlementProcess",
+    "entitlementTemplates":          "EntitlementTemplate",
+    "slaProcesses":                  "SlaProcess",
+    # Field Service
+    "appointmentSchedulingPolicies": "AppointmentSchedulingPolicy",
+    "workTypes":                     "WorkType",
+    "workTypeGroups":                "WorkTypeGroup",
+    "operatingHours":                "OperatingHours",
+    # Bots
+    "bots":                          "Bot",
+    # Territory 2.0
+    "territory2Models":              "Territory2Model",
 }
 SUB_TYPE_MAP = {
-    "fields": "CustomField", "validationRules": "ValidationRule",
-    "recordTypes": "RecordType", "listViews": "ListView",
-    "webLinks": "WebLink", "compactLayouts": "CompactLayout",
-    "fieldSets": "FieldSet", "businessProcesses": "BusinessProcess",
+    "fields":            "CustomField",
+    "validationRules":   "ValidationRule",
+    "recordTypes":       "RecordType",
+    "listViews":         "ListView",
+    "webLinks":          "WebLink",
+    "compactLayouts":    "CompactLayout",
+    "fieldSets":         "FieldSet",
+    "businessProcesses": "BusinessProcess",
+    "indexes":           "Index",
+    "sharingReasons":    "SharingReason",
+}
+BUNDLE_TYPES = {"lwc", "aura", "experiences", "networks", "communities"}
+FOLDER_BASED_TYPES = {
+    "reports":        "Report",
+    "dashboards":     "Dashboard",
+    "emailTemplates": "EmailTemplate",
+    "documents":      "Document",
 }
 
+def strip_suffix(name):
+    # Remove known sub-type suffixes before -meta.xml, then fallback
+    return re.sub(
+        r'\.(field|fields|validationRule|recordType|listView|webLink|compactLayout'
+        r'|fieldSet|businessProcess|sharingReason|index'
+        r'|layout|flexipage|flow|flowDefinition|flowCategory'
+        r'|permissionset|permissionsetgroup|profile|userAccessPolicy'
+        r'|approvalProcess|assignmentRules|autoResponseRules|escalationRules'
+        r'|matchingRule|sharingRules|duplicateRule|pathAssistant|quickAction'
+        r'|workflow|object|tab|customMetadata|namedCredential|connectedApp'
+        r'|authprovider|remoteSiteSetting|cspTrustedSite|corsWhitelistOrigin'
+        r'|externalCredential|certificate|globalValueSet|standardValueSet'
+        r'|globalValueSetTranslation|standardValueSetTranslation|translation'
+        r'|reportType|report|dashboard|emailTemplate|document'
+        r'|lightningMessageChannel|experienceBundle|network|networkBranding'
+        r'|managedTopic|customSite|community|notiftype|notificationTypeConfig'
+        r'|callCenter|serviceChannel|servicePresenceStatus|presenceDeclineReason'
+        r'|presenceUserConfig|routingConfiguration|queueRoutingConfig'
+        r'|skill|milestoneType|entitlementProcess|entitlementTemplate|slaProcess'
+        r'|appointmentSchedulingPolicy|workType|workTypeGroup|operatingHours'
+        r'|bot|territory2Model|territory2Type|territory2|territory2Rule'
+        r'|externalDataSource|externalServiceRegistration|platformEventChannel'
+        r'|platformEventChannelMember|analyticSnapshot|queue|group|role'
+        r'|homePageComponent|homePageLayout|actionLinkGroupTemplate'
+        r'|settings|site|md|resource|asset|cls|trigger|page|component|useraccesspolicy'
+        r')-meta\.xml$'
+        r'|-meta\.xml$|\.xml$|\.cls$|\.trigger$|\.page$|\.component$|\.resource$|\.asset$',
+        '', name
+    )
+
 members_by_type = {}
+
+def add(meta_type, member):
+    if member:
+        members_by_type.setdefault(meta_type, set()).add(member)
+
 for f in changed_files:
     if "force-app/main/default/" not in f:
         continue
@@ -53,27 +185,80 @@ for f in changed_files:
     if len(parts) < 2:
         continue
     folder, filename = parts[0], parts[1]
-    meta_type = TYPE_MAP.get(folder)
-    if not meta_type:
+
+    # Folder-based (reports, dashboards, emailTemplates, documents)
+    if folder in FOLDER_BASED_TYPES:
+        if len(parts) >= 3:
+            add(FOLDER_BASED_TYPES[folder], f"{parts[1]}/{strip_suffix(parts[2])}")
         continue
-    # Static resources: only the -meta.xml descriptor or bare .resource file counts.
-    # Skip inner asset files (any extension) nested inside a resource folder,
-    # and skip flat asset files (.png, .zip, .js, etc.) that sit alongside the descriptor.
+
+    # objectTranslations
+    if folder == "objectTranslations":
+        add("CustomObjectTranslation", parts[1])
+        continue
+
+    # objects
+    if folder == "objects":
+        obj_name = parts[1]
+        if len(parts) >= 4 and parts[2] in SUB_TYPE_MAP:
+            add(SUB_TYPE_MAP[parts[2]], f"{obj_name}.{strip_suffix(parts[3])}")
+        else:
+            add("CustomObject", obj_name)
+        continue
+
+    # territory2Models hierarchy
+    if folder == "territory2Models":
+        model_name = parts[1]
+        if len(parts) == 3:
+            add("Territory2Model", model_name)
+        elif len(parts) >= 4:
+            sub = parts[2]
+            member_name = strip_suffix(parts[3])
+            if sub == "territory2Types":
+                add("Territory2Type", f"{model_name}.{member_name}")
+            elif sub == "territories":
+                add("Territory2", f"{model_name}.{member_name}")
+            elif sub == "territory2Rules":
+                add("Territory2Rule", f"{model_name}.{member_name}")
+        continue
+
+    # Bundle types — member = bundle folder name
+    if folder in BUNDLE_TYPES:
+        meta_type = TYPE_MAP.get(folder)
+        if meta_type:
+            add(meta_type, parts[1])
+        continue
+
+    # staticresources
     if folder == "staticresources":
         if len(parts) > 2:
-            continue  # nested asset inside resource folder
+            continue
         if not re.search(r'(\.resource-meta\.xml|\.resource)$', filename):
-            continue  # flat asset file (e.g. MyResource.png, MyResource.zip)
-    member = re.sub(r'\.[a-zA-Z]+-meta\.xml$|-meta\.xml$|\.xml$|\.cls$|\.trigger$|\.page$|\.component$|\.resource$', '', filename)
-    if folder in ("lwc", "aura"):
-        member = parts[1]
-    if folder == "objects" and len(parts) >= 4 and parts[2] in SUB_TYPE_MAP:
-        member    = f"{parts[1]}.{re.sub(r'\.[a-zA-Z]+-meta\.xml$|(-meta)?\.xml$', '', parts[3])}"
-        meta_type = SUB_TYPE_MAP[parts[2]]
-    elif folder == "objects":
-        member = parts[1]
-    if member:
-        members_by_type.setdefault(meta_type, set()).add(member)
+            continue
+        add("StaticResource", strip_suffix(filename))
+        continue
+
+    # contentassets
+    if folder == "contentassets":
+        if not re.search(r'(\.asset-meta\.xml|\.asset)$', filename):
+            continue
+        add("ContentAsset", strip_suffix(filename))
+        continue
+
+    # labels — always single member
+    if folder == "labels":
+        add("CustomLabels", "CustomLabels")
+        continue
+
+    # settings — member = filename without suffix
+    if folder == "settings":
+        add("Settings", strip_suffix(filename))
+        continue
+
+    # General flat types
+    meta_type = TYPE_MAP.get(folder)
+    if meta_type:
+        add(meta_type, strip_suffix(filename))
 
 if not members_by_type:
     print("WARNING: No metadata members detected – no artifacts generated")
