@@ -1,18 +1,20 @@
-name: RCPL Weekly Branch, Package & TestClass Generator
+name: RCPL Weekly Validation
 
 # Runs every Saturday at 10:00 PM IST (16:30 UTC)
-# Creates feature branches and generates delta artifacts:
-#   manifest/feature/<env>_DD_MM_YYYY_package.xml
-#   manifest/feature/<env>_DD_MM_YYYY_TestClass.txt  (ApexClass members only)
+# Validates complete force-app/ against each target org in parallel.
+# Test classes resolved from TestClass.txt (RunSpecifiedTests) or falls back to RunLocalTests.
 #
-# Promotion flow:  dev -> QA org  |  QA -> UAT org  |  UAT -> PROD org
+# Parallel flow:
+#   dev  -> validate full force-app against QA   org
+#   QA   -> validate full force-app against UAT  org
+#   UAT  -> validate full force-app against PROD org
 
 schedules:
   - cron: "30 16 * * 6"
-    displayName: "Weekly Saturday - Branch, Package & TestClass Generator"
+    displayName: "Weekly Saturday - Full Validation"
     branches:
       include:
-        - dev
+        - Dev
     always: true
 
 trigger: none
@@ -22,10 +24,6 @@ parameters:
     type: boolean
     displayName: "Manual Run"
     default: false
-  - name: customDate
-    type: string
-    displayName: "Custom date suffix (DD_MM_YYYY) - leave blank to use today"
-    default: ""
 
 variables:
   - group: RCPL-Salesforce-Secrets
@@ -37,222 +35,272 @@ pool:
 
 stages:
 
-# ── STAGE 1: feature/dev_DD_MM_YYYY  (diff: dev vs QA) ─────────────────────────
-  - stage: Generate_Dev
-    displayName: "Dev - feature/dev branch + artifacts"
+# ── STAGE 1: dev full force-app -> validate against QA org ─────────────────────
+  - stage: Validate_Dev_To_QA
+    displayName: "Validate dev -> QA org"
+    dependsOn: []
     jobs:
-      - job: Gen_Dev
-        displayName: "Create feature/dev branch, package & test classes"
+      - job: Validate_Dev_QA
+        displayName: "dev full force-app -> QA org"
         steps:
           - checkout: self
             fetchDepth: 0
-            persistCredentials: true
-
-          - script: |
-              DATE="${{ parameters.customDate }}"
-              if [[ -z "$DATE" ]]; then
-                DATE=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
-              fi
-              BRANCH="feature/dev_${DATE}"
-              echo "##vso[task.setvariable variable=FEATURE_BRANCH]$BRANCH"
-              echo "Branch: $BRANCH"
-            displayName: "Compute branch name"
-
-          - script: |
-              git config user.email "$(GIT_USER_EMAIL)"
-              git config user.name  "$(GIT_USER_NAME)"
-              git fetch --all
-              git checkout dev && git pull origin dev
-              if git ls-remote --exit-code --heads origin "$(FEATURE_BRANCH)" > /dev/null 2>&1; then
-                git checkout "$(FEATURE_BRANCH)" && git pull origin "$(FEATURE_BRANCH)"
-              else
-                git checkout -b "$(FEATURE_BRANCH)"
-                git push origin "$(FEATURE_BRANCH)"
-              fi
-            displayName: "Create/checkout feature/dev branch"
 
           - script: |
               git fetch --all
-              CHANGED=$(git diff --name-only origin/QA...origin/dev -- force-app/ 2>/dev/null || \
-                        git diff --name-only origin/QA origin/dev -- force-app/ 2>/dev/null || echo "")
-              echo "Changed files:"
-              echo "$CHANGED"
-              echo "$CHANGED" > /tmp/changed_files.txt
-            displayName: "Compute diff: dev vs QA"
+              git checkout Dev
+            displayName: "Switch to dev branch"
+
+          - task: UseNode@1
+            displayName: "Setup Node.js 22"
+            inputs:
+              versionSource: spec
+              version: "22.x"
 
           - script: |
-              if [[ ! -s /tmp/changed_files.txt ]]; then
-                echo "No changes between dev and QA - copying full package as fallback"
-                mkdir -p "$(Build.SourcesDirectory)/manifest/feature"
-                cp "$(Build.SourcesDirectory)/manifest/package.xml" \
-                   "$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_package.xml"
-              else
-                python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
-              fi
-            displayName: "Generate package.xml & TestClass.txt"
-            env:
-              FEATURE_BRANCH: $(FEATURE_BRANCH)
-              BUILD_SOURCES:  $(Build.SourcesDirectory)
-              API_VERSION:    $(API_VERSION)
+              npm install -g @salesforce/cli@latest
+              sf version
+            displayName: "Install Salesforce CLI"
+
+          - task: DownloadSecureFile@1
+            name: jwtKey
+            displayName: "Download JWT Key"
+            inputs:
+              secureFile: "server.key"
+
+          - script: chmod 600 "$(jwtKey.secureFilePath)"
+            displayName: "Set JWT Key Permissions"
+
+          - script: sf org logout --all --no-prompt || true
+            displayName: "Clear Prior Sessions"
 
           - script: |
-              git config user.email "$(GIT_USER_EMAIL)"
-              git config user.name  "$(GIT_USER_NAME)"
-              git checkout "$(FEATURE_BRANCH)"
-              git add "manifest/$(FEATURE_BRANCH)_package.xml" 2>/dev/null || true
-              git add "manifest/$(FEATURE_BRANCH)_TestClass.txt" 2>/dev/null || true
-              if git diff --cached --quiet; then
-                echo "Nothing new to commit"
-              else
-                git commit -m "chore: auto-generate artifacts for $(FEATURE_BRANCH) [skip ci]"
-                git push origin "$(FEATURE_BRANCH)"
-              fi
-            displayName: "Commit & push artifacts to feature/dev branch"
+              sf org login jwt \
+                --client-id "$(SALESFORCE_CONSUMER_KEY_QA)" \
+                --jwt-key-file "$(jwtKey.secureFilePath)" \
+                --username "$(SFDX_AUTH_QA_USERNAME)" \
+                --instance-url "$(SANDBOX_URL)" \
+                --set-default
+            displayName: "Authenticate to QA Org"
 
-# ── STAGE 2: feature/qa_DD_MM_YYYY  (diff: QA vs UAT) ──────────────────────────
-  - stage: Generate_QA
-    displayName: "QA - feature/qa branch + artifacts"
-    dependsOn: Generate_Dev
-    condition: succeeded()
+          - script: |
+              TC_FILE="$(Build.SourcesDirectory)/TestClass.txt"
+              if [[ -f "$TC_FILE" ]] && [[ -s "$TC_FILE" ]]; then
+                TEST_CLASSES=$(cat "$TC_FILE" | tr '\n' ' ' | xargs)
+                echo "RunSpecifiedTests: $TEST_CLASSES"
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+              else
+                echo "No TestClass.txt found - RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]"
+              fi
+            displayName: "Resolve Test Classes"
+
+          - script: |
+              echo "TestLevel: $(TEST_LEVEL)"
+              echo "Classes  : $(TEST_CLASSES)"
+            displayName: "Display Validation Config"
+
+          - script: |
+              set +e
+              CMD=(sf project deploy start \
+                --dry-run \
+                --source-dir "$(Build.SourcesDirectory)/force-app" \
+                --target-org "$(SFDX_AUTH_QA_USERNAME)" \
+                --test-level "$(TEST_LEVEL)" \
+                --wait 30 \
+                --ignore-warnings \
+                --verbose)
+              [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]] && CMD+=(--tests $(TEST_CLASSES))
+              echo "Running: ${CMD[@]}"
+              "${CMD[@]}"
+              EXIT_CODE=$?
+              set -e
+              [[ "$EXIT_CODE" != "0" ]] && { echo "VALIDATION FAILED"; exit 1; }
+              echo "VALIDATION PASSED"
+            displayName: "Validate full force-app against QA Org"
+
+          - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+            displayName: "JWT Key Cleanup"
+            condition: always()
+
+# ── STAGE 2: QA full force-app -> validate against UAT org ─────────────────────
+  - stage: Validate_QA_To_UAT
+    displayName: "Validate QA -> UAT org"
+    dependsOn: []
     jobs:
-      - job: Gen_QA
-        displayName: "Create feature/qa branch, package & test classes"
+      - job: Validate_QA_UAT
+        displayName: "QA full force-app -> UAT org"
         steps:
           - checkout: self
             fetchDepth: 0
-            persistCredentials: true
-
-          - script: |
-              DATE="${{ parameters.customDate }}"
-              if [[ -z "$DATE" ]]; then
-                DATE=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
-              fi
-              BRANCH="feature/qa_${DATE}"
-              echo "##vso[task.setvariable variable=FEATURE_BRANCH]$BRANCH"
-              echo "Branch: $BRANCH"
-            displayName: "Compute branch name"
-
-          - script: |
-              git config user.email "$(GIT_USER_EMAIL)"
-              git config user.name  "$(GIT_USER_NAME)"
-              git fetch --all
-              git checkout QA && git pull origin QA
-              if git ls-remote --exit-code --heads origin "$(FEATURE_BRANCH)" > /dev/null 2>&1; then
-                git checkout "$(FEATURE_BRANCH)" && git pull origin "$(FEATURE_BRANCH)"
-              else
-                git checkout -b "$(FEATURE_BRANCH)"
-                git push origin "$(FEATURE_BRANCH)"
-              fi
-            displayName: "Create/checkout feature/qa branch"
 
           - script: |
               git fetch --all
-              CHANGED=$(git diff --name-only origin/UAT...origin/QA -- force-app/ 2>/dev/null || \
-                        git diff --name-only origin/UAT origin/QA -- force-app/ 2>/dev/null || echo "")
-              echo "Changed files:"
-              echo "$CHANGED"
-              echo "$CHANGED" > /tmp/changed_files.txt
-            displayName: "Compute diff: QA vs UAT"
+              git checkout QA
+            displayName: "Switch to QA branch"
+
+          - task: UseNode@1
+            displayName: "Setup Node.js 22"
+            inputs:
+              versionSource: spec
+              version: "22.x"
 
           - script: |
-              if [[ ! -s /tmp/changed_files.txt ]]; then
-                echo "No changes between QA and UAT - copying full package as fallback"
-                mkdir -p "$(Build.SourcesDirectory)/manifest/feature"
-                cp "$(Build.SourcesDirectory)/manifest/package.xml" \
-                   "$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_package.xml"
-              else
-                python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
-              fi
-            displayName: "Generate package.xml & TestClass.txt"
-            env:
-              FEATURE_BRANCH: $(FEATURE_BRANCH)
-              BUILD_SOURCES:  $(Build.SourcesDirectory)
-              API_VERSION:    $(API_VERSION)
+              npm install -g @salesforce/cli@latest
+              sf version
+            displayName: "Install Salesforce CLI"
+
+          - task: DownloadSecureFile@1
+            name: jwtKey
+            displayName: "Download JWT Key"
+            inputs:
+              secureFile: "server.key"
+
+          - script: chmod 600 "$(jwtKey.secureFilePath)"
+            displayName: "Set JWT Key Permissions"
+
+          - script: sf org logout --all --no-prompt || true
+            displayName: "Clear Prior Sessions"
 
           - script: |
-              git config user.email "$(GIT_USER_EMAIL)"
-              git config user.name  "$(GIT_USER_NAME)"
-              git checkout "$(FEATURE_BRANCH)"
-              git add "manifest/$(FEATURE_BRANCH)_package.xml" 2>/dev/null || true
-              git add "manifest/$(FEATURE_BRANCH)_TestClass.txt" 2>/dev/null || true
-              if git diff --cached --quiet; then
-                echo "Nothing new to commit"
-              else
-                git commit -m "chore: auto-generate artifacts for $(FEATURE_BRANCH) [skip ci]"
-                git push origin "$(FEATURE_BRANCH)"
-              fi
-            displayName: "Commit & push artifacts to feature/qa branch"
+              sf org login jwt \
+                --client-id "$(SALESFORCE_CONSUMER_KEY_UAT)" \
+                --jwt-key-file "$(jwtKey.secureFilePath)" \
+                --username "$(SFDX_AUTH_UAT_USERNAME)" \
+                --instance-url "$(SANDBOX_URL)" \
+                --set-default
+            displayName: "Authenticate to UAT Org"
 
-# ── STAGE 3: feature/uat_DD_MM_YYYY  (diff: UAT vs master) ─────────────────────
-  - stage: Generate_UAT
-    displayName: "UAT - feature/uat branch + artifacts"
-    dependsOn: Generate_QA
-    condition: succeeded()
+          - script: |
+              TC_FILE="$(Build.SourcesDirectory)/TestClass.txt"
+              if [[ -f "$TC_FILE" ]] && [[ -s "$TC_FILE" ]]; then
+                TEST_CLASSES=$(cat "$TC_FILE" | tr '\n' ' ' | xargs)
+                echo "RunSpecifiedTests: $TEST_CLASSES"
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+              else
+                echo "No TestClass.txt found - RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]"
+              fi
+            displayName: "Resolve Test Classes"
+
+          - script: |
+              echo "TestLevel: $(TEST_LEVEL)"
+              echo "Classes  : $(TEST_CLASSES)"
+            displayName: "Display Validation Config"
+
+          - script: |
+              set +e
+              CMD=(sf project deploy start \
+                --dry-run \
+                --source-dir "$(Build.SourcesDirectory)/force-app" \
+                --target-org "$(SFDX_AUTH_UAT_USERNAME)" \
+                --test-level "$(TEST_LEVEL)" \
+                --wait 30 \
+                --ignore-warnings \
+                --verbose)
+              [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]] && CMD+=(--tests $(TEST_CLASSES))
+              echo "Running: ${CMD[@]}"
+              "${CMD[@]}"
+              EXIT_CODE=$?
+              set -e
+              [[ "$EXIT_CODE" != "0" ]] && { echo "VALIDATION FAILED"; exit 1; }
+              echo "VALIDATION PASSED"
+            displayName: "Validate full force-app against UAT Org"
+
+          - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+            displayName: "JWT Key Cleanup"
+            condition: always()
+
+# ── STAGE 3: UAT full force-app -> validate against PROD org ───────────────────
+  - stage: Validate_UAT_To_PROD
+    displayName: "Validate UAT -> PROD org"
+    dependsOn: []
     jobs:
-      - job: Gen_UAT
-        displayName: "Create feature/uat branch, package & test classes"
+      - job: Validate_UAT_PROD
+        displayName: "UAT full force-app -> PROD org"
         steps:
           - checkout: self
             fetchDepth: 0
-            persistCredentials: true
-
-          - script: |
-              DATE="${{ parameters.customDate }}"
-              if [[ -z "$DATE" ]]; then
-                DATE=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
-              fi
-              BRANCH="feature/uat_${DATE}"
-              echo "##vso[task.setvariable variable=FEATURE_BRANCH]$BRANCH"
-              echo "Branch: $BRANCH"
-            displayName: "Compute branch name"
-
-          - script: |
-              git config user.email "$(GIT_USER_EMAIL)"
-              git config user.name  "$(GIT_USER_NAME)"
-              git fetch --all
-              git checkout UAT && git pull origin UAT
-              if git ls-remote --exit-code --heads origin "$(FEATURE_BRANCH)" > /dev/null 2>&1; then
-                git checkout "$(FEATURE_BRANCH)" && git pull origin "$(FEATURE_BRANCH)"
-              else
-                git checkout -b "$(FEATURE_BRANCH)"
-                git push origin "$(FEATURE_BRANCH)"
-              fi
-            displayName: "Create/checkout feature/uat branch"
 
           - script: |
               git fetch --all
-              CHANGED=$(git diff --name-only origin/master...origin/UAT -- force-app/ 2>/dev/null || \
-                        git diff --name-only origin/master origin/UAT -- force-app/ 2>/dev/null || echo "")
-              echo "Changed files:"
-              echo "$CHANGED"
-              echo "$CHANGED" > /tmp/changed_files.txt
-            displayName: "Compute diff: UAT vs master"
+              git checkout UAT
+            displayName: "Switch to UAT branch"
+
+          - task: UseNode@1
+            displayName: "Setup Node.js 22"
+            inputs:
+              versionSource: spec
+              version: "22.x"
 
           - script: |
-              if [[ ! -s /tmp/changed_files.txt ]]; then
-                echo "No changes between UAT and master - copying full package as fallback"
-                mkdir -p "$(Build.SourcesDirectory)/manifest/feature"
-                cp "$(Build.SourcesDirectory)/manifest/package.xml" \
-                   "$(Build.SourcesDirectory)/manifest/$(FEATURE_BRANCH)_package.xml"
-              else
-                python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
-              fi
-            displayName: "Generate package.xml & TestClass.txt"
-            env:
-              FEATURE_BRANCH: $(FEATURE_BRANCH)
-              BUILD_SOURCES:  $(Build.SourcesDirectory)
-              API_VERSION:    $(API_VERSION)
+              npm install -g @salesforce/cli@latest
+              sf version
+            displayName: "Install Salesforce CLI"
+
+          - task: DownloadSecureFile@1
+            name: jwtKey
+            displayName: "Download JWT Key"
+            inputs:
+              secureFile: "server.key"
+
+          - script: chmod 600 "$(jwtKey.secureFilePath)"
+            displayName: "Set JWT Key Permissions"
+
+          - script: sf org logout --all --no-prompt || true
+            displayName: "Clear Prior Sessions"
 
           - script: |
-              git config user.email "$(GIT_USER_EMAIL)"
-              git config user.name  "$(GIT_USER_NAME)"
-              git checkout "$(FEATURE_BRANCH)"
-              git add "manifest/$(FEATURE_BRANCH)_package.xml" 2>/dev/null || true
-              git add "manifest/$(FEATURE_BRANCH)_TestClass.txt" 2>/dev/null || true
-              if git diff --cached --quiet; then
-                echo "Nothing new to commit"
+              sf org login jwt \
+                --client-id "$(SALESFORCE_CONSUMER_KEY_PROD)" \
+                --jwt-key-file "$(jwtKey.secureFilePath)" \
+                --username "$(SFDX_AUTH_PROD_USERNAME)" \
+                --instance-url "$(LOGIN_URL)" \
+                --set-default
+            displayName: "Authenticate to PROD Org"
+
+          - script: |
+              TC_FILE="$(Build.SourcesDirectory)/TestClass.txt"
+              if [[ -f "$TC_FILE" ]] && [[ -s "$TC_FILE" ]]; then
+                TEST_CLASSES=$(cat "$TC_FILE" | tr '\n' ' ' | xargs)
+                echo "RunSpecifiedTests: $TEST_CLASSES"
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
               else
-                git commit -m "chore: auto-generate artifacts for $(FEATURE_BRANCH) [skip ci]"
-                git push origin "$(FEATURE_BRANCH)"
+                echo "No TestClass.txt found - RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+                echo "##vso[task.setvariable variable=TEST_CLASSES]"
               fi
-            displayName: "Commit & push artifacts to feature/uat branch"
+            displayName: "Resolve Test Classes"
+
+          - script: |
+              echo "TestLevel: $(TEST_LEVEL)"
+              echo "Classes  : $(TEST_CLASSES)"
+            displayName: "Display Validation Config"
+
+          - script: |
+              set +e
+              CMD=(sf project deploy start \
+                --dry-run \
+                --source-dir "$(Build.SourcesDirectory)/force-app" \
+                --target-org "$(SFDX_AUTH_PROD_USERNAME)" \
+                --test-level "$(TEST_LEVEL)" \
+                --wait 60 \
+                --ignore-warnings \
+                --verbose)
+              [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]] && CMD+=(--tests $(TEST_CLASSES))
+              echo "Running: ${CMD[@]}"
+              "${CMD[@]}"
+              EXIT_CODE=$?
+              set -e
+              [[ "$EXIT_CODE" != "0" ]] && { echo "VALIDATION FAILED"; exit 1; }
+              echo "VALIDATION PASSED"
+            displayName: "Validate full force-app against PROD Org"
+
+          - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+            displayName: "JWT Key Cleanup"
+            condition: always()
