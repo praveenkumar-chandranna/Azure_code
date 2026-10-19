@@ -1,685 +1,1242 @@
-<?xml version="1.0" encoding="UTF-8"?>
+package.xml contents:
+<?xml version='1.0' encoding='utf-8'?>
 <Package xmlns="http://soap.sforce.com/2006/04/metadata">
-    <types>
-        <members>CustomHeadlessUserDiscoveryHandler</members>
-        <members>CustomHeadlessUserDiscoveryHandlerTest</members>
-        <members>CustomLoginDiscoveryHandler</members>
-        <members>CustomLoginDiscoveryHandlerTest</members>
-        <members>CustomSmsOtpHandler</members>
-        <members>CustomSmsOtpHandlerTest</members>
-        <members>DmsManualGRNController</members>
-        <members>DmsManualGRNControllerTest</members>
-        <members>DualLoginController</members>
-        <members>DualLoginControllerTest</members>
-        <members>JioCxSmsService</members>
-        <members>JioCxSmsServiceTest</members>
-        <members>SmsGatewayHttpCalloutMock</members>
-        <members>CancellationWindowService</members>
-        <members>DMSInventoryViewController</members>
-        <members>DMSInventoryViewControllerTest</members>
-        <members>DMSPortalSecurityUtil</members>
-        <members>DMSStockUploadController</members>
-        <members>DMSStockUploadControllerTest</members>
-        <members>DMSStockUploadSeeAllDataTest</members>
-        <members>GRNTriggerHandler</members>
-        <members>GRNTriggerTest</members>
-        <members>InventoryReconciliationBatch</members>
-        <members>InventoryReconciliationBatchTest</members>
-        <members>InventoryTransactionService</members>
-        <members>InventoryTransactionServiceTest</members>
-        <members>InvoiceDispatchStockService</members>
-        <members>InvoiceDispatchStockServiceTest</members>
-        <members>InvoiceTriggerHandler</members>
-        <members>OrderHoldStockService</members>
-        <members>OrderHoldStockServiceTest</members>
-        <members>OrderItemTriggerHandler</members>
-        <members>OrderTriggerHandler</members>
-        <members>SecondaryOrderDecisionRules</members>
-        <members>SecondaryOrderDecisionTest</members>
-        <members>SecondaryOrderTestData</members>
-        <members>StockLedgerTriggerHandler</members>
-        <members>StockLedgerTriggerTest</members>
-        <members>TripReconciliationTriggerHandler</members>
-        <members>TripTriggerHandler</members>
-        <members>VanTransferStockService</members>
-        <members>VanTransferStockServiceTest</members>
-        <name>ApexClass</name>
-    </types>
-    <types>
-        <members>Account.Activated_On__c</members>
-        <members>Account.Address_Type__c</members>
-        <members>Account.Alternate_Phone__c</members>
-        <members>Account.Anchor_Distributor__c</members>
-        <members>Account.Available_Credit__c</members>
-        <members>Account.Building_Name__c</members>
-        <members>Account.Category_Allocation__c</members>
-        <members>Account.Category__c</members>
-        <members>Account.Classification__c</members>
-        <members>Account.Client_Uuid__c</members>
-        <members>Account.Colour_Code__c</members>
-        <members>Account.Complex_Name__c</members>
-        <members>Account.Created_By_Role__c</members>
-        <members>Account.Created_By_User__c</members>
-        <members>Account.Credit_Limit__c</members>
-        <members>Account.Customer_Group__c</members>
-        <members>Account.Distribution_Channel__c</members>
-        <members>Account.Distributor__c</members>
-        <members>Account.District__c</members>
-        <members>Account.FSSAI_Number__c</members>
-        <members>Account.Health_Indicator__c</members>
-        <members>Account.Is_Active__c</members>
-        <members>Account.Is_Anchor_DB__c</members>
-        <members>Account.Is_Display__c</members>
-        <members>Account.Is_New__c</members>
-        <members>Account.Is_Signature__c</members>
-        <members>Account.KYC_Status__c</members>
-        <members>Account.Landmark__c</members>
-        <members>Account.Mobile_Verified__c</members>
-        <members>Account.Mobile__c</members>
-        <members>Account.National_ID_Type__c</members>
-        <members>Account.National_ID__c</members>
-        <members>Account.Onboarding_Date__c</members>
-        <members>Account.Outlet_Code__c</members>
-        <members>Account.Outlet_Location__c</members>
-        <members>Account.Outlet_Status__c</members>
-        <members>Account.Outstanding_Amount__c</members>
-        <members>Account.Owner_Name__c</members>
-        <members>Account.Pricing_Group__c</members>
-        <members>Account.Pricing_Procedure__c</members>
-        <members>Account.Region__c</members>
-        <members>Account.SAP_Region_Code__c</members>
-        <members>Account.Sales_Org__c</members>
-        <members>Account.Ship_To_Code__c</members>
-        <members>Account.Staff_Role__c</members>
-        <members>Account.State_Code__c</members>
-        <members>Account.Status__c</members>
-        <members>Account.Store_Name__c</members>
-        <members>Account.Verticals__c</members>
-        <members>Account.Visit_Frequency__c</members>
-        <members>Account.Wallet_Credit__c</members>
-        <members>Account.Zone__c</members>
-        <members>Account.test_2__c</members>
-        <members>Account.test__c</members>
-        <members>Account_Product__c.Account__c</members>
-        <members>Account_Product__c.Product__c</members>
-        <members>App_Configuration__c.Distributor__c</members>
-        <members>Attendance__c.Attendance_Date__c</members>
-        <members>Attendance__c.Beat_Reassigned__c</members>
-        <members>Attendance__c.Beat__c</members>
-        <members>Attendance__c.Client_Created_At__c</members>
-        <members>Attendance__c.Client_Uuid__c</members>
-        <members>Attendance__c.Day_In_Location__c</members>
-        <members>Attendance__c.Day_In_Time__c</members>
-        <members>Attendance__c.Day_Out_Location__c</members>
-        <members>Attendance__c.Day_Out_Time__c</members>
-        <members>Attendance__c.Distributor__c</members>
-        <members>Attendance__c.Is_Late_Day_In__c</members>
-        <members>Attendance__c.Moved_To_Telesales__c</members>
-        <members>Attendance__c.Reassigned_Beat__c</members>
-        <members>Attendance__c.Reassigned_By__c</members>
-        <members>Attendance__c.Reassigned_To__c</members>
-        <members>Attendance__c.Status__c</members>
-        <members>Attendance__c.User__c</members>
-        <members>Attendance__c.Working_Hours__c</members>
-        <members>Beat_Outlet__c.Beat__c</members>
-        <members>Beat_Outlet__c.Outlet__c</members>
-        <members>Beat__c.Market_Area__c</members>
-        <members>Claim_Line_Item__c.Claim__c</members>
-        <members>Claim_Line_Item__c.Invoice_Line__c</members>
-        <members>Claim__c.Distributor__c</members>
-        <members>Collection__c.Invoice__c</members>
-        <members>Contact.FOS_ID__c</members>
-        <members>Contact.Onboarding_Date__c</members>
-        <members>Distributor_Category_Mapping__c.CSO_Contact__c</members>
-        <members>Distributor_Category_Mapping__c.Category__c</members>
-        <members>Distributor_Category_Mapping__c.Distributor__c</members>
-        <members>Distributor_Outlet_Category__c.Category__c</members>
-        <members>Distributor_Outlet_Category__c.Distributor_Outlet_Mapping__c</members>
-        <members>GRN_Line__c.Accepted__c</members>
-        <members>GRN_Line__c.Batch__c</members>
-        <members>GRN_Line__c.Damaged__c</members>
-        <members>GRN_Line__c.Discrepancy_Reason__c</members>
-        <members>GRN_Line__c.Expiry__c</members>
-        <members>GRN_Line__c.GRN__c</members>
-        <members>GRN_Line__c.Manufacture__c</members>
-        <members>GRN_Line__c.Ordered__c</members>
-        <members>GRN_Line__c.Product__c</members>
-        <members>GRN_Line__c.Product_Name__c</members>
-        <members>GRN_Line__c.Product_Batch__c</members>
-        <members>GRN_Line__c.Recieved__c</members>
-        <members>GRN_Line__c.Shortage__c</members>
-        <members>GRN__c.Account__c</members>
-        <members>GRN__c.Distributor__c</members>
-        <members>GRN__c.Invoice__c</members>
-        <members>GRN__c.Invoice_Number__c</members>
-        <members>GRN__c.Status__c</members>
-        <members>GRN__c.Value__c</members>
-        <members>Invoice_Line_Item__c.CGST_Amount__c</members>
-        <members>Invoice_Line_Item__c.CGST_Percentage__c</members>
-        <members>Invoice_Line_Item__c.Discount_Amount__c</members>
-        <members>Invoice_Line_Item__c.Discount_Percentage__c</members>
-        <members>Invoice_Line_Item__c.HSN_Code__c</members>
-        <members>Invoice_Line_Item__c.IGST_Amount__c</members>
-        <members>Invoice_Line_Item__c.IGST_Percentage__c</members>
-        <members>Invoice_Line_Item__c.Invoice_Line_External_ID__c</members>
-        <members>Invoice_Line_Item__c.Invoice__c</members>
-        <members>Invoice_Line_Item__c.List_Price__c</members>
-        <members>Invoice_Line_Item__c.Product_Batch__c</members>
-        <members>Invoice_Line_Item__c.Quantity__c</members>
-        <members>Invoice_Line_Item__c.SGST_Amount__c</members>
-        <members>Invoice_Line_Item__c.SGST_Percentage__c</members>
-        <members>Invoice_Line_Item__c.Total_Value__c</members>
-        <members>Invoice__c.Account__c</members>
-        <members>Invoice__c.Distributor__c</members>
-        <members>Invoice__c.Document_Type__c</members>
-        <members>Invoice__c.Invoice_Date__c</members>
-        <members>Invoice__c.Invoice_No__c</members>
-        <members>Invoice__c.Invoice_Type__c</members>
-        <members>Invoice__c.Order__c</members>
-        <members>Invoice__c.Outlet__c</members>
-        <members>Journey_Plan_Line__c.Beat__c</members>
-        <members>Journey_Plan_Line__c.Journey_Plan__c</members>
-        <members>Journey_Plan__c.CSO__c</members>
-        <members>Location.Vehicle__c</members>
-        <members>Location.Warehouse__c</members>
-        <members>Market_Area_Outlet__c.Market_Area__c</members>
-        <members>Market_Area_Outlet__c.Outlet__c</members>
-        <members>Market_Area__c.Distributor__c</members>
-        <members>Order.Distributor__c</members>
-        <members>Order.Order_Status__c</members>
-        <members>Order.SAP_Order_Number__c</members>
-        <members>Order.SF_Order_Number__c</members>
-        <members>Order.Visit__c</members>
-        <members>Plant__c.Description__c</members>
-        <members>Plant__c.Plant_Code__c</members>
-        <members>Pricing_Rule__c.DATAB__c</members>
-        <members>Pricing_Rule__c.DATBI__c</members>
-        <members>Pricing_Rule__c.ERDAT__c</members>
-        <members>Pricing_Rule__c.External_Id__c</members>
-        <members>Pricing_Rule__c.KBETR__c</members>
-        <members>Pricing_Rule__c.KMEIN__c</members>
-        <members>Pricing_Rule__c.KNUMH__c</members>
-        <members>Pricing_Rule__c.KOPOS__c</members>
-        <members>Pricing_Rule__c.KOTABNR__c</members>
-        <members>Pricing_Rule__c.KPEIN__c</members>
-        <members>Pricing_Rule__c.KSCHL__c</members>
-        <members>Pricing_Rule__c.KSTBM__c</members>
-        <members>Pricing_Rule__c.KSTBW__c</members>
-        <members>Pricing_Rule__c.LOEKZ__c</members>
-        <members>Pricing_Rule__c.MANDT__c</members>
-        <members>Pricing_Rule__c.MBIS__c</members>
-        <members>Pricing_Rule__c.MFROM__c</members>
-        <members>Pricing_Rule__c.NMATN__c</members>
-        <members>Pricing_Rule__c.VAKEY__c</members>
-        <members>Pricing_Rule__c.WAERS__c</members>
-        <members>Product2.Category__c</members>
-        <members>Product2.EAN__c</members>
-        <members>Product2.HSN_Code__c</members>
-        <members>Product2.LBD__c</members>
-        <members>Product2.Material_Group__c</members>
-        <members>Product2.Pack_type__c</members>
-        <members>Product2.Sales_Unit__c</members>
-        <members>Product2.Self_Pickup_Eligible__c</members>
-        <members>Product2.Shelf_Life_Days__c</members>
-        <members>Product2.Units_Per_Case__c</members>
-        <members>Product_Batch_Stock__c.Product_Batch__c</members>
-        <members>Product_Batch_Stock__c.Stock_Balance__c</members>
-        <members>Product_Batch__c.Account_Product__c</members>
-        <members>Product_Inventory__c.MARD_Quantity__c</members>
-        <members>Product_Inventory__c.MARD_Updated_At__c</members>
-        <members>Product_Inventory__c.MSEG_Quantity__c</members>
-        <members>Product_Inventory__c.MSEG_Updated_At__c</members>
-        <members>Product_Inventory__c.Plant__c</members>
-        <members>Product_Inventory__c.SAP_Inventory_Key__c</members>
-        <members>Product_Inventory__c.Unit__c</members>
-        <members>Product_Inventory__c.VBBE_Quantity__c</members>
-        <members>Product_Inventory__c.VBBE_Updated_At__c</members>
-        <members>RetailVisitKpi.Visit_Task__c</members>
-        <members>Scheme_Application__c.Distributor_Outlet_Mapping__c</members>
-        <members>Scheme_Application__c.Invoice_Line__c</members>
-        <members>Scheme_Application__c.Invoice__c</members>
-        <members>Scheme_Application__c.Order_Item__c</members>
-        <members>Scheme__c.Search_Rule__c</members>
-        <members>Stock_Adjustment__c.Account_Product__c</members>
-        <members>Stock_Adjustment__c.Product_Batch__c</members>
-        <members>Survey_Answers__c.Survey_Question__c</members>
-        <members>Survey_Answers__c.Survey__c</members>
-        <members>Survey_Question__c.Survey__c</members>
-        <members>Target_Achievement__c.Target__c</members>
-        <members>Target__c.Parent_Target__c</members>
-        <members>Target__c.User__c</members>
-        <members>Trip_Reconciliation__c.Trip__c</members>
-        <members>User.Device_Token__c</members>
-        <members>User.Persona__c</members>
-        <members>Visit.ASE_Flag__c</members>
-        <members>Visit.Action_Plan_Template__c</members>
-        <members>Visit.Attendance__c</members>
-        <members>Visit.Beat_Outlet__c</members>
-        <members>Visit.Check_In_Distance_M__c</members>
-        <members>Visit.Check_In_Location__c</members>
-        <members>Visit.Check_In_Time__c</members>
-        <members>Visit.Check_Out_Location__c</members>
-        <members>Visit.Check_Out_Time__c</members>
-        <members>Visit.Distributor__c</members>
-        <members>Visit.Is_Joint_Visit__c</members>
-        <members>Visit.Joint_Visit_User__c</members>
-        <members>Visit.Journey_Plan_Line__c</members>
-        <members>Visit.Missed_Reason__c</members>
-        <members>Visit.Notes__c</members>
-        <members>Visit.Outlet__c</members>
-        <members>Visit.Survey__c</members>
-        <members>Visit.Trip_List__c</members>
-        <members>Visit.Visit_Type__c</members>
-        <members>Visit.Visited_By__c</members>
-        <members>Visit.Within_Geofence__c</members>
-        <members>Visit_Task__c.Action_Plan_Template_Item__c</members>
-        <members>Visit_Task__c.Assessment_Task_Definition__c</members>
-        <members>Visit_Task__c.IsRequired__c</members>
-        <members>Visit_Task__c.Name__c</members>
-        <members>Visit_Task__c.SequenceNumber__c</members>
-        <members>Visit_Task__c.StartTime__c</members>
-        <members>Visit_Task__c.Status__c</members>
-        <members>Visit_Task__c.Visit__c</members>
-        <members>Wallet_Transaction__c.Invoice_Line_Item__c</members>
-        <members>Wallet_Transaction__c.Scheme_Application__c</members>
-        <members>Wallet_Transaction__c.Wallet__c</members>
-        <members>Wallet__c.Account_Relationship__c</members>
-        <members>cgcloud__Inventory_Transaction__c.GRN_Line__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Invoice_Line__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Product_Batch_Stock__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Product_Batch__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Stock_Adjustment__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Stock_Location__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Trip_Reconciliation__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Trip__c</members>
-        <members>cgcloud__Inventory__c.Account_Product__c</members>
-        <members>cgcloud__Inventory__c.Stock_Location__c</members>
-        <members>cgcloud__Order_Item__c.SAP_Order_Item_Key__c</members>
-        <members>cgcloud__Trip_List__c.Beat__c</members>
-        <members>cgcloud__Trip_List__c.Driver__c</members>
-        <members>cgcloud__Trip_List__c.Stock_Location__c</members>
-        <members>cgcloud__Trip_List__c.Vehicle__c</members>
-        <members>cgcloud__Vehicle__c.Distributor__c</members>
-        <members>cgcloud__Warehouse__c.Distributor__c</members>
-        <members>Data_Import_Log__c.Distributor__c</members>
-        <members>Data_Import_Log__c.Error_Summary__c</members>
-        <members>Data_Import_Log__c.Execution_Duration_Ms__c</members>
-        <members>Data_Import_Log__c.Failed_Rows__c</members>
-        <members>Data_Import_Log__c.File_Name__c</members>
-        <members>Data_Import_Log__c.Import_Type__c</members>
-        <members>Data_Import_Log__c.Status__c</members>
-        <members>Data_Import_Log__c.Success_Rows__c</members>
-        <members>Data_Import_Log__c.Total_Rows__c</members>
-        <members>Data_Import_Log__c.Uploaded_By__c</members>
-        <members>GRN__c.Stock_Location__c</members>
-        <members>Inventory_Drift_Log__c.Actual_Hold__c</members>
-        <members>Inventory_Drift_Log__c.Actual_On_Hand__c</members>
-        <members>Inventory_Drift_Log__c.Details__c</members>
-        <members>Inventory_Drift_Log__c.Expected_Hold__c</members>
-        <members>Inventory_Drift_Log__c.Expected_On_Hand__c</members>
-        <members>Inventory_Drift_Log__c.Healed_At__c</members>
-        <members>Inventory_Drift_Log__c.Inventory_Balance__c</members>
-        <members>Inventory_Drift_Log__c.Status__c</members>
-        <members>Inventory_Drift_Log__c.Variance_Hold__c</members>
-        <members>Inventory_Drift_Log__c.Variance_On_Hand__c</members>
-        <members>Invoice_Line_Item__c.Invoiced_Qty__c</members>
-        <members>Invoice_Line_Item__c.Order_Item__c</members>
-        <members>Invoice__c.Status__c</members>
-        <members>Loading_Sheet_Item__c.Product_Batch__c</members>
-        <members>Loading_Sheet_Item__c.Product__c</members>
-        <members>Loading_Sheet_Item__c.Quantity__c</members>
-        <members>Loading_Sheet__c.Status__c</members>
-        <members>Loading_Sheet__c.Trip__c</members>
-        <members>Product_Batch_Stock__c.Available_Quantity__c</members>
-        <members>Product_Batch_Stock__c.Hold_Quantity__c</members>
-        <members>Product_Batch_Stock__c.On_Hand_Quantity__c</members>
-        <members>Product_Batch__c.Batch_Number__c</members>
-        <members>Product_Batch__c.Expiry_Date__c</members>
-        <members>Product_Batch__c.MRP__c</members>
-        <members>Product_Batch__c.Mfg_Date__c</members>
-        <members>Product_Batch__c.Product__c</members>
-        <members>Trip_Reconciliation_Item__c.Damaged_Quantity__c</members>
-        <members>Trip_Reconciliation_Item__c.Product_Batch__c</members>
-        <members>Trip_Reconciliation_Item__c.Product__c</members>
-        <members>Trip_Reconciliation_Item__c.Sold_Quantity__c</members>
-        <members>Trip_Reconciliation_Item__c.Trip_Reconciliation__c</members>
-        <members>Trip_Reconciliation_Item__c.Unsold_Quantity__c</members>
-        <members>Trip_Reconciliation__c.Status__c</members>
-        <members>Trip_Reconciliation__c.Van_Location__c</members>
-        <members>Trip_Reconciliation__c.Warehouse_Location__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Idempotency_Key__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Qty_Change_Hold__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Qty_Change_On_Hand__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Source_Ref_Id__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Source_Ref_Type__c</members>
-        <members>cgcloud__Inventory_Transaction__c.Transaction_Type__c</members>
-        <members>cgcloud__Inventory__c.Available_Quantity__c</members>
-        <members>cgcloud__Inventory__c.Hold_Quantity__c</members>
-        <members>cgcloud__Inventory__c.On_Hand_Quantity__c</members>
-        <members>cgcloud__Trip_List__c.Account__c</members>
-        <members>cgcloud__Trip_List__c.Status__c</members>
-        <members>cgcloud__Trip_List__c.Van_Location__c</members>
-        <members>cgcloud__Trip_List__c.Warehouse_Location__c</members>
-        <name>CustomField</name>
-    </types>
-    <types>
-        <members>SMS_Config.Default_Config</members>
-        <members>SMS_Config.Login_OTP_Verification</members>
-        <name>CustomMetadata</name>
-    </types>
-    <types>
-        <members>RCPL_Test_Push</members>
-        <name>CustomNotificationType</name>
-    </types>
-    <types>
-        <members>Account_Product__c</members>
-        <members>App_Configuration__c</members>
-        <members>Attendance__c</members>
-        <members>Beat_Outlet__c</members>
-        <members>Beat__c</members>
-        <members>Claim_Line_Item__c</members>
-        <members>Claim__c</members>
-        <members>Collection__c</members>
-        <members>Distributor_Category_Mapping__c</members>
-        <members>Distributor_Outlet_Category__c</members>
-        <members>GRN_Line__c</members>
-        <members>GRN__c</members>
-        <members>Invoice_Line_Item__c</members>
-        <members>Invoice__c</members>
-        <members>Journey_Plan_Line__c</members>
-        <members>Journey_Plan__c</members>
-        <members>Market_Area_Outlet__c</members>
-        <members>Market_Area__c</members>
-        <members>Plant__c</members>
-        <members>Pricing_Rule__c</members>
-        <members>Product_Batch_Stock__c</members>
-        <members>Product_Batch__c</members>
-        <members>Product_Inventory__c</members>
-        <members>SMS_Config__mdt</members>
-        <members>Scheme_Application__c</members>
-        <members>Scheme_Search_Rule__c</members>
-        <members>Scheme_Slab__c</members>
-        <members>Scheme__c</members>
-        <members>Stock_Adjustment__c</members>
-        <members>Survey_Answers__c</members>
-        <members>Survey_Question__c</members>
-        <members>Survey__c</members>
-        <members>Target_Achievement__c</members>
-        <members>Target__c</members>
-        <members>Trip_Reconciliation__c</members>
-        <members>Visit_Task__c</members>
-        <members>Wallet_Transaction__c</members>
-        <members>Wallet__c</members>
-        <members>Data_Import_Log__c</members>
-        <members>Inventory_Drift_Log__c</members>
-        <members>Trip_Reconciliation_Item__c</members>
-        <name>CustomObject</name>
-    </types>
-    <types>
-        <members>Account-Account Layout</members>
-        <members>Account-CSO User</members>
-        <members>Account-Distributor</members>
-        <members>Account-Outlet</members>
-        <members>Account-Sub-Distributor Layout</members>
-        <members>Account_Product__c-Account Product Layout</members>
-        <members>ActionPlan-Action Plan Layout</members>
-        <members>App_Configuration__c-App Configuration Layout</members>
-        <members>Attendance__c-Attendance Layout</members>
-        <members>Beat_Outlet__c-Beat Outlet Layout</members>
-        <members>Beat__c-Beat %28Route%29 Layout</members>
-        <members>Claim_Line_Item__c-Claim Line Item Layout</members>
-        <members>Claim__c-Claim Layout</members>
-        <members>Collection__c-Collection Layout</members>
-        <members>Contact-Contact Layout</members>
-        <members>Distributor_Category_Mapping__c-Distributor CSO Mapping Layout</members>
-        <members>Distributor_Outlet_Category__c-Distributor Outlet Category Layout</members>
-        <members>GRN_Line__c-GRN Line Item Layout</members>
-        <members>GRN__c-GRN Layout</members>
-        <members>Invoice_Line_Item__c-Invoice Line Item Layout</members>
-        <members>Invoice__c-Invoice Layout</members>
-        <members>Journey_Plan_Line__c-Journey Plan Line Layout</members>
-        <members>Journey_Plan__c-Journey Plan Layout</members>
-        <members>Market_Area_Outlet__c-Market Area Outlet Layout</members>
-        <members>Market_Area__c-Market Area Layout</members>
-        <members>Order-Counter Sale</members>
-        <members>Order-Demand Capture</members>
-        <members>Order-Opportunity Sale</members>
-        <members>Order-Order Layout</members>
-        <members>Order-Primary</members>
-        <members>Order-Return</members>
-        <members>Order-Secondary</members>
-        <members>Order-Van Sale</members>
-        <members>Plant__c-Plant Layout</members>
-        <members>Pricing_Rule__c-Pricing Rule Layout</members>
-        <members>Product2-Product Layout</members>
-        <members>ProductCategory-Category Layout</members>
-        <members>Product_Batch_Stock__c-Product Batch Stock Layout</members>
-        <members>Product_Batch__c-Product Batch Layout</members>
-        <members>Product_Inventory__c-Product Inventory Layout</members>
-        <members>Scheme_Application__c-Scheme Application Layout</members>
-        <members>Scheme_Search_Rule__c-Scheme Search Rule Layout</members>
-        <members>Scheme_Slab__c-Scheme Slab Layout</members>
-        <members>Scheme__c-Scheme Layout</members>
-        <members>Stock_Adjustment__c-Stock Adjustment Layout</members>
-        <members>Survey_Answers__c-Survey Answers Layout</members>
-        <members>Survey_Question__c-Survey Question Layout</members>
-        <members>Survey__c-Survey Layout</members>
-        <members>Target_Achievement__c-Target Achievement Layout</members>
-        <members>Target__c-Target Layout</members>
-        <members>Trip_Reconciliation__c-Trip Reconciliation Layout</members>
-        <members>User-User Layout</members>
-        <members>UserAlt-User Profile Layout</members>
-        <members>Visit-CSO Visit</members>
-        <members>Visit-Delivery Stop</members>
-        <members>Visit-Van Sales Visit</members>
-        <members>Visit_Task__c-Visit Task Layout</members>
-        <members>Wallet_Transaction__c-Wallet Transaction Layout</members>
-        <members>Wallet__c-Wallet Layout</members>
-        <name>Layout</name>
-    </types>
-    <types>
-        <members>dmsGRNComponent</members>
-        <members>dmsGrnDetailsComponent</members>
-        <members>dmsUiKit</members>
-        <members>dualLoginScreen</members>
-        <members>dmsInventoryDashboard</members>
-        <members>dmsStockUpload</members>
-        <name>LightningComponentBundle</name>
-    </types>
-    <types>
-        <members>Product2.AllProducts</members>
-        <name>ListView</name>
-    </types>
-    <types>
-        <members>Dual_Login_Guest_Access</members>
-        <members>RCPL_Admin_Full</members>
-        <members>RCPL_Approvals_ASM</members>
-        <members>RCPL_Base_External</members>
-        <members>RCPL_Base_Internal</members>
-        <members>RCPL_Beat_Manage</members>
-        <members>RCPL_Beat_Transfer_Receive</members>
-        <members>RCPL_Billing_Collection</members>
-        <members>RCPL_Budget_Manage</members>
-        <members>RCPL_Bulk_Load</members>
-        <members>RCPL_Case_Vertical</members>
-        <members>RCPL_Claims_Approve</members>
-        <members>RCPL_Claims_Submit</members>
-        <members>RCPL_Credit_Note</members>
-        <members>RCPL_DMS_Operate</members>
-        <members>RCPL_Delivery_Execute</members>
-        <members>RCPL_Field_Execute</members>
-        <members>RCPL_Field_Supervise</members>
-        <members>RCPL_Integration_Full</members>
-        <members>RCPL_Inventory_Manage</members>
-        <members>RCPL_Journey_Plan_Manage</members>
-        <members>RCPL_Mobile_Offline</members>
-        <members>RCPL_Order_Capture</members>
-        <members>RCPL_Outlet_Onboard</members>
-        <members>RCPL_Reporting_Build</members>
-        <members>RCPL_Reporting_Read</members>
-        <members>RCPL_Sales_Read</members>
-        <members>RCPL_Sales_Supervise</members>
-        <members>RCPL_Scheme_Author</members>
-        <members>RCPL_Setup_Audit</members>
-        <members>RCPL_Survey_Author</members>
-        <members>RCPL_Target_Allocate</members>
-        <members>RCPL_Van_Sales_Execute</members>
-        <members>RCPL_Data_Import_Log_Access</members>
-        <members>RCPL_Drift_Audit_Access</members>
-        <members>RCPL_Invoice_Dispatch_Access</members>
-        <members>RCPL_Van_Transfer_Access</members>
-        <name>PermissionSet</name>
-    </types>
-    <types>
-        <members>ASE_PSG</members>
-        <members>ASM_PSG</members>
-        <members>CSO_PSG</members>
-        <members>Delivery_Driver_PSG</members>
-        <members>Distributor_Coordinator_PSG</members>
-        <members>Finance_PSG</members>
-        <members>Integration_PSG</members>
-        <members>NSH_PSG</members>
-        <members>RSM_PSG</members>
-        <members>SM_PSG</members>
-        <members>System_Admin_PSG</members>
-        <members>TeleSales_PSG</members>
-        <members>Trade_Marketing_PSG</members>
-        <members>Van_Sales_DSR_PSG</members>
-        <members>Vertical_Head_PSG</members>
-        <name>PermissionSetGroup</name>
-    </types>
-    <types>
-        <members>Admin</members>
-        <members>RCPL Community Profile</members>
-        <members>RCPL Integration Profile %28API only%29</members>
-        <members>RCPL Internal Profile</members>
-        <name>Profile</name>
-    </types>
-    <types>
-        <members>Account.CSO_User</members>
-        <members>Account.Outlet</members>
-        <members>Account.Sub_distributor</members>
-        <members>Beat__c.Dummy</members>
-        <members>Beat__c.Regular</members>
-        <members>Beat__c.Van_Sales_Route</members>
-        <members>Contact.Driver</members>
-        <members>Contact.Van_Sales</members>
-        <members>Location.Delivery_Vehicle</members>
-        <members>Location.Van</members>
-        <members>Location.Warehouse</members>
-        <members>Order.Counter_Sale</members>
-        <members>Order.Demand_Capture</members>
-        <members>Order.Opportunity_Sale</members>
-        <members>Order.Primary</members>
-        <members>Order.Return</members>
-        <members>Order.Secondary</members>
-        <members>Order.Van_Sale</members>
-        <members>Visit.CSO_Visit</members>
-        <members>Visit.Delivery_Stop</members>
-        <members>Visit.HQ</members>
-        <members>Visit.Van_Sales_Visit</members>
-        <members>cgcloud__Trip_List__c.Delivary_Run</members>
-        <members>cgcloud__Trip_List__c.Van_Sales_Trip</members>
-        <name>RecordType</name>
-    </types>
-    <types>
-        <members>Accounts_with_Distributor_Outlet_Mappings_with_Distributor_Outlet_Categories</members>
-        <name>ReportType</name>
-    </types>
-    <types>
-        <members>Admin</members>
-        <members>Andheri_Foods_ASE</members>
-        <members>AndhraPradesh_SH</members>
-        <members>Assam_SH</members>
-        <members>Beverages_VH</members>
-        <members>Bihar_SH</members>
-        <members>Biscuits_VH</members>
-        <members>Chhattisgarh_SH</members>
-        <members>Confectionery_VH</members>
-        <members>Delhi_Central_Foods_ASE</members>
-        <members>Delhi_Central_Foods_ASM</members>
-        <members>Delhi_SH</members>
-        <members>East_RSM</members>
-        <members>Gujarat_SH</members>
-        <members>HPC_VH</members>
-        <members>Haryana_SH</members>
-        <members>HimachalPradesh_SH</members>
-        <members>JammuKashmir_SH</members>
-        <members>Jharkhand_SH</members>
-        <members>Karnataka_SH</members>
-        <members>Kerala_SH</members>
-        <members>MadhyaPradesh_SH</members>
-        <members>Maharashtra_SH</members>
-        <members>Mumbai_West_Foods_ASM</members>
-        <members>NSM</members>
-        <members>North1_RSM</members>
-        <members>North2_RSM</members>
-        <members>Odisha_SH</members>
-        <members>Punjab_SH</members>
-        <members>Rajasthan_SH</members>
-        <members>South1_RSM</members>
-        <members>South2_RSM</members>
-        <members>Staples_VH</members>
-        <members>TamilNadu_SH</members>
-        <members>Telangana_SH</members>
-        <members>UttarPradesh_SH</members>
-        <members>Uttarakhand_SH</members>
-        <members>WestBengal_SH</members>
-        <members>West_RSM</members>
-        <name>Role</name>
-    </types>
-    <types>
-        <members>App_Configuration__c</members>
-        <members>Attendance__c</members>
-        <members>Beat__c</members>
-        <members>Claim__c</members>
-        <members>Distributor_Category_Mapping__c</members>
-        <members>GRN__c</members>
-        <members>Journey_Plan__c</members>
-        <members>Market_Area__c</members>
-        <members>Plant__c</members>
-        <members>Pricing_Rule__c</members>
-        <members>Product_Batch__c</members>
-        <members>Product_Inventory__c</members>
-        <members>Scheme_Search_Rule__c</members>
-        <members>Scheme_Slab__c</members>
-        <members>Scheme__c</members>
-        <members>Stock_Adjustment__c</members>
-        <members>Survey__c</members>
-        <members>Target__c</members>
-        <name>SharingRules</name>
-    </types>
-    <types>
-        <members>RCPL_Logo_New</members>
-        <name>StaticResource</name>
-    </types>
-    <types>
-        <members>RCPL_UAP_ASE</members>
-        <members>RCPL_UAP_ASM</members>
-        <members>RCPL_UAP_CSO</members>
-        <members>RCPL_UAP_Distributor_coordinator</members>
-        <members>RCPL_UAP_Driver</members>
-        <members>RCPL_UAP_Finance</members>
-        <members>RCPL_UAP_Integration</members>
-        <members>RCPL_UAP_NSH</members>
-        <members>RCPL_UAP_RSM</members>
-        <members>RCPL_UAP_SM</members>
-        <members>RCPL_UAP_System_Admin</members>
-        <members>RCPL_UAP_Telesales</members>
-        <members>RCPL_UAP_Trade_Marketing</members>
-        <members>RCPL_UAP_Van_Sales</members>
-        <members>RCPL_UAP_Vertical_Head</members>
-        <name>UserAccessPolicy</name>
-    </types>
-    <types>
-        <members>GRNTrigger</members>
-        <members>InvoiceTrigger</members>
-        <members>OrderItemTrigger</members>
-        <members>OrderTrigger</members>
-        <members>StockLedgerTrigger</members>
-        <members>TripReconciliationTrigger</members>
-        <members>TripTrigger</members>
-        <name>ApexTrigger</name>
-    </types>
-    <version>67.0</version>
+<types>
+<members>AttendanceAbsenceNotifier</members>
+<members>AttendanceAbsenceNotifierTest</members>
+<members>AttendanceCreationService</members>
+<members>AttendanceCreationServiceTest</members>
+<members>AttendanceCutoffEvaluatorBatch</members>
+<members>AttendanceCutoffEvaluatorBatchTest</members>
+<members>AttendanceDailyCreationBatch</members>
+<members>AttendanceDailyCreationBatchTest</members>
+<members>AttendanceDailyCreationScheduler</members>
+<members>AttendanceDayRules</members>
+<members>AttendanceFieldGuard</members>
+<members>AttendanceLifecycleService</members>
+<members>AttendanceLifecycleServiceTest</members>
+<members>AttendanceLifecycleValidator</members>
+<members>AttendanceLifecycleValidatorTest</members>
+<members>AttendanceMessages</members>
+<members>AttendanceMidnightAutoCloseBatch</members>
+<members>AttendanceMidnightAutoCloseBatchTest</members>
+<members>AttendancePersonaAccessTest</members>
+<members>AttendanceScheduling</members>
+<members>AttendanceStateMachine</members>
+<members>AttendanceStatus</members>
+<members>AttendanceSweepBatch</members>
+<members>AttendanceSweepScheduler</members>
+<members>AttendanceSweepSchedulerTest</members>
+<members>AttendanceTestSupport</members>
+<members>AttendanceTriggerHandler</members>
+<members>CancellationWindowService</members>
+<members>CustomHeadlessUserDiscoveryHandler</members>
+<members>CustomHeadlessUserDiscoveryHandlerTest</members>
+<members>CustomLoginDiscoveryHandler</members>
+<members>CustomLoginDiscoveryHandlerTest</members>
+<members>CustomSmsOtpHandler</members>
+<members>CustomSmsOtpHandlerTest</members>
+<members>DMSInventoryViewController</members>
+<members>DMSInventoryViewControllerTest</members>
+<members>DMSPortalSecurityUtil</members>
+<members>DMSStockUploadController</members>
+<members>DMSStockUploadControllerTest</members>
+<members>DMSStockUploadSeeAllDataTest</members>
+<members>DMSUserController</members>
+<members>DMSUserControllerTest</members>
+<members>DMSVehicleController</members>
+<members>DMSVehicleControllerTest</members>
+<members>DmsManualGRNController</members>
+<members>DmsManualGRNControllerTest</members>
+<members>DualLoginController</members>
+<members>DualLoginControllerTest</members>
+<members>GRNTriggerHandler</members>
+<members>GRNTriggerTest</members>
+<members>InventoryReconciliationBatch</members>
+<members>InventoryReconciliationBatchTest</members>
+<members>InventoryTransactionService</members>
+<members>InventoryTransactionServiceTest</members>
+<members>InvoiceDispatchStockService</members>
+<members>InvoiceDispatchStockServiceTest</members>
+<members>InvoiceTriggerHandler</members>
+<members>JioCxSmsService</members>
+<members>JioCxSmsServiceTest</members>
+<members>MarketAreaController</members>
+<members>MarketAreaControllerTest</members>
+<members>OrderHoldStockService</members>
+<members>OrderHoldStockServiceTest</members>
+<members>OrderItemTriggerHandler</members>
+<members>OrderTriggerHandler</members>
+<members>RCPL_BaseException</members>
+<members>RCPL_BusinessDate</members>
+<members>RCPL_IntegrationException</members>
+<members>RCPL_MessagePolicy</members>
+<members>RCPL_MessagePolicyTest</members>
+<members>RCPL_TestDataFactory</members>
+<members>RCPL_TestPersonaFactory</members>
+<members>RCPL_ValidationException</members>
+<members>RCPL_ValidationExceptionTest</members>
+<members>RcplForgotPasswordController</members>
+<members>RcplForgotPasswordControllerTest</members>
+<members>SecondaryOrderDecisionRules</members>
+<members>SecondaryOrderDecisionTest</members>
+<members>SecondaryOrderTestData</members>
+<members>SmsGatewayHttpCalloutMock</members>
+<members>StockLedgerTriggerHandler</members>
+<members>StockLedgerTriggerTest</members>
+<members>TriggerHandler</members>
+<members>TriggerHandler_Test</members>
+<members>TripReconciliationTriggerHandler</members>
+<members>TripTriggerHandler</members>
+<members>VanTransferStockService</members>
+<members>VanTransferStockServiceTest</members>
+<name>ApexClass</name>
+</types>
+<types>
+<members>AttendanceTrigger</members>
+<members>GRNTrigger</members>
+<members>InvoiceTrigger</members>
+<members>OrderItemTrigger</members>
+<members>OrderTrigger</members>
+<members>StockLedgerTrigger</members>
+<members>TripReconciliationTrigger</members>
+<members>TripTrigger</members>
+<name>ApexTrigger</name>
+</types>
+<types>
+<members>Claim__c.Claim_Compact_Layout</members>
+<members>Collection__c.Collection_Compact_Layout</members>
+<members>Invoice__c.Invoice_Compact_Layout</members>
+<members>Market_Area__c.Market_Area_Compact_Layout</members>
+<members>Plant__c.Plant_Compact_Layout</members>
+<members>Product_Inventory__c.Product_Inventory_Compact_Layout</members>
+<members>Sales_Order__c.Sales_Order_Compact_Layout</members>
+<members>Wallet__c.Wallet_Compact_Layout</members>
+<name>CompactLayout</name>
+</types>
+<types>
+<members>Account.Activated_On__c</members>
+<members>Account.Address_Type__c</members>
+<members>Account.Alternate_Phone__c</members>
+<members>Account.Anchor_Distributor__c</members>
+<members>Account.Available_Credit__c</members>
+<members>Account.Building_Name__c</members>
+<members>Account.Category_Allocation__c</members>
+<members>Account.Category__c</members>
+<members>Account.Channel_Type__c</members>
+<members>Account.Classification__c</members>
+<members>Account.Client_Uuid__c</members>
+<members>Account.Colour_Code__c</members>
+<members>Account.Complex_Name__c</members>
+<members>Account.Created_By_Role__c</members>
+<members>Account.Created_By_User__c</members>
+<members>Account.Credit_Limit__c</members>
+<members>Account.Customer_Group__c</members>
+<members>Account.Distribution_Channel__c</members>
+<members>Account.Distributor__c</members>
+<members>Account.District__c</members>
+<members>Account.FSSAI_Number__c</members>
+<members>Account.GSTIN__c</members>
+<members>Account.Health_Indicator__c</members>
+<members>Account.Is_Active__c</members>
+<members>Account.Is_Anchor_DB__c</members>
+<members>Account.Is_Display__c</members>
+<members>Account.Is_New__c</members>
+<members>Account.Is_Signature__c</members>
+<members>Account.KYC_Details__c</members>
+<members>Account.KYC_Status__c</members>
+<members>Account.KYC_Type__c</members>
+<members>Account.Landmark__c</members>
+<members>Account.Mobile_Verified__c</members>
+<members>Account.Mobile__c</members>
+<members>Account.National_ID_Type__c</members>
+<members>Account.National_ID__c</members>
+<members>Account.Onboarding_Date__c</members>
+<members>Account.Outlet_Code__c</members>
+<members>Account.Outlet_Location__c</members>
+<members>Account.Outlet_Status__c</members>
+<members>Account.Outstanding_Amount__c</members>
+<members>Account.Owner_Name__c</members>
+<members>Account.PAN__c</members>
+<members>Account.Parent_Account_Name__c</members>
+<members>Account.Pricing_Group__c</members>
+<members>Account.Pricing_Procedure__c</members>
+<members>Account.Region__c</members>
+<members>Account.SAP_Customer_Code__c</members>
+<members>Account.SAP_Region_Code__c</members>
+<members>Account.SDO_Sales_Closed_Won_Value__c</members>
+<members>Account.Sales_Org__c</members>
+<members>Account.Ship_To_Code__c</members>
+<members>Account.Staff_Role__c</members>
+<members>Account.State_Code__c</members>
+<members>Account.Status__c</members>
+<members>Account.Store_Name__c</members>
+<members>Account.Sub_Channel_Type__c</members>
+<members>Account.Tax_Rate__c</members>
+<members>Account.Verticals__c</members>
+<members>Account.Visit_Days__c</members>
+<members>Account.Visit_Frequency__c</members>
+<members>Account.Wallet_Credit__c</members>
+<members>Account.Zone__c</members>
+<members>Account.test_2__c</members>
+<members>Account.test__c</members>
+<members>Account_Location__c.Account__c</members>
+<members>Account_Product__c.Account__c</members>
+<members>Account_Product__c.Master_Data_Key__c</members>
+<members>Account_Product__c.Product__c</members>
+<members>Account_SKU_Stock__c.Account__c</members>
+<members>Account_SKU_Stock__c.Dealer_Location__c</members>
+<members>Account_SKU_Stock__c.Dealer_Margin_Value__c</members>
+<members>Account_SKU_Stock__c.Dealer_Margin__c</members>
+<members>Account_SKU_Stock__c.GST__c</members>
+<members>Account_SKU_Stock__c.MRP__c</members>
+<members>Account_SKU_Stock__c.PTD__c</members>
+<members>Account_SKU_Stock__c.PTR__c</members>
+<members>Account_SKU_Stock__c.Product_Name__c</members>
+<members>Account_SKU_Stock__c.Product__c</members>
+<members>Account_SKU_Stock__c.Retailor_Margin_Value__c</members>
+<members>Account_SKU_Stock__c.SKU__c</members>
+<members>Account_SKU_Stock__c.Status__c</members>
+<members>Account_SKU_Stock__c.Stock_Status__c</members>
+<members>Account_SKU_Stock__c.Stock__c</members>
+<members>App_Configuration__c.Allow_Out_Of_Location_Checkin__c</members>
+<members>App_Configuration__c.Allow_Out_Of_Location_Visits__c</members>
+<members>App_Configuration__c.Allow_Unplanned_Visits__c</members>
+<members>App_Configuration__c.Distributor__c</members>
+<members>App_Configuration__c.FTL_Min_Fill_Pct__c</members>
+<members>App_Configuration__c.Geofence_Radius_Meters__c</members>
+<members>App_Configuration__c.Login_Cutoff_Time__c</members>
+<members>App_Configuration__c.Mandatory_Visit_Activities__c</members>
+<members>App_Configuration__c.Min_Truck_FTL_Utilization_Percent__c</members>
+<members>App_Configuration__c.Near_Expiry_Alert_Days__c</members>
+<members>App_Configuration__c.Near_Expiry_Threshold_Days__c</members>
+<members>App_Configuration__c.Safety_Stock_Buffer_Days__c</members>
+<members>App_Configuration__c.Vertical__c</members>
+<members>Attendance__c.Attendance_Date__c</members>
+<members>Attendance__c.Attendance_Key__c</members>
+<members>Attendance__c.Attendance_Type__c</members>
+<members>Attendance__c.Beat_Reassigned__c</members>
+<members>Attendance__c.Beat__c</members>
+<members>Attendance__c.Client_Created_At__c</members>
+<members>Attendance__c.Client_Uuid__c</members>
+<members>Attendance__c.Day_In_Location__c</members>
+<members>Attendance__c.Day_In_Time__c</members>
+<members>Attendance__c.Day_Out_Location__c</members>
+<members>Attendance__c.Day_Out_Time__c</members>
+<members>Attendance__c.Distributor__c</members>
+<members>Attendance__c.Is_Late_Day_In__c</members>
+<members>Attendance__c.Moved_To_Telesales__c</members>
+<members>Attendance__c.Reassigned_Beat__c</members>
+<members>Attendance__c.Reassigned_By__c</members>
+<members>Attendance__c.Reassigned_To__c</members>
+<members>Attendance__c.Status__c</members>
+<members>Attendance__c.System_Auto_Closed__c</members>
+<members>Attendance__c.User__c</members>
+<members>Attendance__c.Working_Hours__c</members>
+<members>Beat_Outlet__c.Beat__c</members>
+<members>Beat_Outlet__c.Client_Uuid__c</members>
+<members>Beat_Outlet__c.Frequency_Range__c</members>
+<members>Beat_Outlet__c.Is_Inactive__c</members>
+<members>Beat_Outlet__c.Master_Data_Key__c</members>
+<members>Beat_Outlet__c.Outlet__c</members>
+<members>Beat_Outlet__c.Sequence__c</members>
+<members>Beat_Outlet__c.Visit_Sequence__c</members>
+<members>Beat_Outlet__c.Week_Of_Month__c</members>
+<members>Beat__c.CSO__c</members>
+<members>Beat__c.Category_Text__c</members>
+<members>Beat__c.Days__c</members>
+<members>Beat__c.Distributor__c</members>
+<members>Beat__c.Driver_ID__c</members>
+<members>Beat__c.Market_Area__c</members>
+<members>Beat__c.Master_Data_Key__c</members>
+<members>Beat__c.Repeats_On__c</members>
+<members>Beat__c.Route_Type__c</members>
+<members>Beat__c.Town_Area__c</members>
+<members>Beat__c.Vehicle__c</members>
+<members>Case.DB_Case_Duration_Hours__c</members>
+<members>Case.DateTime_Closed_c__c</members>
+<members>Case.DateTime_Opened_c__c</members>
+<members>Case.First_Contact_Close__c</members>
+<members>Case.SDO_Quality_Score__c</members>
+<members>Case.SDO_Servcie_Response_Time_mins__c</members>
+<members>Case.SDO_Service_SLA_Compliant__c</members>
+<members>Case.SDO_Volume__c</members>
+<members>Claim_Line_Item__c.Approved_Amount__c</members>
+<members>Claim_Line_Item__c.Approved_Quantity__c</members>
+<members>Claim_Line_Item__c.Audit_Remarks__c</members>
+<members>Claim_Line_Item__c.Claim__c</members>
+<members>Claim_Line_Item__c.Claimed_Amount__c</members>
+<members>Claim_Line_Item__c.Claimed_Quantity__c</members>
+<members>Claim_Line_Item__c.Discrepancy_Status__c</members>
+<members>Claim_Line_Item__c.Invoice_Line__c</members>
+<members>Claim_Line_Item__c.System_Computed_Amount__c</members>
+<members>Claim_Line_Item__c.System_Computed_Quantity__c</members>
+<members>Claim__c.Credit_Note_Reference__c</members>
+<members>Claim__c.Distributor__c</members>
+<members>Claim__c.Settled_By__c</members>
+<members>Claim__c.Settlement_Date__c</members>
+<members>Claim__c.Settlement_Type__c</members>
+<members>Claim__c.Status__c</members>
+<members>Claim__c.Total_Approved_Amount__c</members>
+<members>Claim__c.Total_Claimed_Amount__c</members>
+<members>Claim__c.Variance_Reason__c</members>
+<members>Collection__c.Amount__c</members>
+<members>Collection__c.Collection_Date__c</members>
+<members>Collection__c.Collection_Mode__c</members>
+<members>Collection__c.Invoice__c</members>
+<members>Collection__c.Reference_Number__c</members>
+<members>Collection__c.Status__c</members>
+<members>Contact.Driving_License_Number__c</members>
+<members>Contact.FOS_ID__c</members>
+<members>Contact.Onboarding_Date__c</members>
+<members>DMS_User_Provisioning_Config__mdt.Max_Operational_Users__c</members>
+<members>DMS_User_Role_Config__mdt.Permission_Set_Group__c</members>
+<members>Data_Import_Log__c.Distributor__c</members>
+<members>Data_Import_Log__c.Error_Summary__c</members>
+<members>Data_Import_Log__c.Execution_Duration_Ms__c</members>
+<members>Data_Import_Log__c.Failed_Rows__c</members>
+<members>Data_Import_Log__c.File_Name__c</members>
+<members>Data_Import_Log__c.Import_Type__c</members>
+<members>Data_Import_Log__c.Status__c</members>
+<members>Data_Import_Log__c.Success_Rows__c</members>
+<members>Data_Import_Log__c.Total_Rows__c</members>
+<members>Data_Import_Log__c.Uploaded_By__c</members>
+<members>Distributor_Category_Mapping__c.CSO_Contact__c</members>
+<members>Distributor_Category_Mapping__c.CSO__c</members>
+<members>Distributor_Category_Mapping__c.Category_Text__c</members>
+<members>Distributor_Category_Mapping__c.Category__c</members>
+<members>Distributor_Category_Mapping__c.Distributor__c</members>
+<members>Distributor_Category_Mapping__c.Master_Data_Key__c</members>
+<members>Distributor_Category_Mapping__c.Status__c</members>
+<members>Distributor_Outlet_Category__c.Category__c</members>
+<members>Distributor_Outlet_Category__c.Distributor_Outlet_Mapping__c</members>
+<members>GRN_Line__c.Accepted__c</members>
+<members>GRN_Line__c.Batch__c</members>
+<members>GRN_Line__c.Damaged__c</members>
+<members>GRN_Line__c.Discrepancy_Reason__c</members>
+<members>GRN_Line__c.Expiry__c</members>
+<members>GRN_Line__c.GRN__c</members>
+<members>GRN_Line__c.Invoice_Line__c</members>
+<members>GRN_Line__c.Manufacture__c</members>
+<members>GRN_Line__c.Ordered__c</members>
+<members>GRN_Line__c.Product_Batch__c</members>
+<members>GRN_Line__c.Product_Name__c</members>
+<members>GRN_Line__c.Product__c</members>
+<members>GRN_Line__c.Quality_Notes__c</members>
+<members>GRN_Line__c.Recieved__c</members>
+<members>GRN_Line__c.Returned__c</members>
+<members>GRN_Line__c.SKU_Code__c</members>
+<members>GRN_Line__c.SKU__c</members>
+<members>GRN_Line__c.Shortage__c</members>
+<members>GRN_Line__c.Status__c</members>
+<members>GRN_Line__c.Total_Value__c</members>
+<members>GRN_Line__c.Unit_Price__c</members>
+<members>GRN__c.Account__c</members>
+<members>GRN__c.Distributor__c</members>
+<members>GRN__c.Invoice_Number__c</members>
+<members>GRN__c.Invoice__c</members>
+<members>GRN__c.Sales_Order__c</members>
+<members>GRN__c.Status__c</members>
+<members>GRN__c.Stock_Location__c</members>
+<members>GRN__c.Value__c</members>
+<members>Inventory_Drift_Log__c.Actual_Hold__c</members>
+<members>Inventory_Drift_Log__c.Actual_On_Hand__c</members>
+<members>Inventory_Drift_Log__c.Details__c</members>
+<members>Inventory_Drift_Log__c.Expected_Hold__c</members>
+<members>Inventory_Drift_Log__c.Expected_On_Hand__c</members>
+<members>Inventory_Drift_Log__c.Healed_At__c</members>
+<members>Inventory_Drift_Log__c.Inventory_Balance__c</members>
+<members>Inventory_Drift_Log__c.Status__c</members>
+<members>Inventory_Drift_Log__c.Variance_Hold__c</members>
+<members>Inventory_Drift_Log__c.Variance_On_Hand__c</members>
+<members>Invoice_Line_Item__c.Applied_Scheme_Codes__c</members>
+<members>Invoice_Line_Item__c.CGST_Amount__c</members>
+<members>Invoice_Line_Item__c.CGST_Percentage__c</members>
+<members>Invoice_Line_Item__c.Delivered_Qty__c</members>
+<members>Invoice_Line_Item__c.Discount_Amount__c</members>
+<members>Invoice_Line_Item__c.Discount_Percentage__c</members>
+<members>Invoice_Line_Item__c.HSN_Code__c</members>
+<members>Invoice_Line_Item__c.IGST_Amount__c</members>
+<members>Invoice_Line_Item__c.IGST_Percentage__c</members>
+<members>Invoice_Line_Item__c.Invoice_Line_External_ID__c</members>
+<members>Invoice_Line_Item__c.Invoice__c</members>
+<members>Invoice_Line_Item__c.Invoiced_Qty__c</members>
+<members>Invoice_Line_Item__c.List_Price__c</members>
+<members>Invoice_Line_Item__c.MRP__c</members>
+<members>Invoice_Line_Item__c.Order_Item__c</members>
+<members>Invoice_Line_Item__c.PTR__c</members>
+<members>Invoice_Line_Item__c.Product_Batch__c</members>
+<members>Invoice_Line_Item__c.Product__c</members>
+<members>Invoice_Line_Item__c.Quantity__c</members>
+<members>Invoice_Line_Item__c.SGST_Amount__c</members>
+<members>Invoice_Line_Item__c.SGST_Percentage__c</members>
+<members>Invoice_Line_Item__c.Scheme_Detail_Delivered__c</members>
+<members>Invoice_Line_Item__c.Scheme_Detail__c</members>
+<members>Invoice_Line_Item__c.Scheme_Discount_Booked__c</members>
+<members>Invoice_Line_Item__c.Scheme_Discount_Delivered__c</members>
+<members>Invoice_Line_Item__c.Scheme_Discount__c</members>
+<members>Invoice_Line_Item__c.Total_Value__c</members>
+<members>Invoice__c.Account__c</members>
+<members>Invoice__c.Amount__c</members>
+<members>Invoice__c.Distributor__c</members>
+<members>Invoice__c.Document_Type__c</members>
+<members>Invoice__c.Invoice_Accepted__c</members>
+<members>Invoice__c.Invoice_Date__c</members>
+<members>Invoice__c.Invoice_No__c</members>
+<members>Invoice__c.Invoice_Type__c</members>
+<members>Invoice__c.Order__c</members>
+<members>Invoice__c.Outlet__c</members>
+<members>Invoice__c.Payment_Link__c</members>
+<members>Invoice__c.Payment_Status__c</members>
+<members>Invoice__c.Scheme_Check_Status__c</members>
+<members>Invoice__c.Scheme_Delivered_On__c</members>
+<members>Invoice__c.Scheme_Delivery_Adjustment__c</members>
+<members>Invoice__c.Scheme_Difference__c</members>
+<members>Invoice__c.Scheme_Discount_Total__c</members>
+<members>Invoice__c.Scheme_Fingerprint__c</members>
+<members>Invoice__c.Scheme_Reused_From_Order__c</members>
+<members>Invoice__c.Scheme_Trace__c</members>
+<members>Invoice__c.Status__c</members>
+<members>Invoice__c.Tax__c</members>
+<members>Invoice__c.Total_Amount__c</members>
+<members>Journey_Plan_Line__c.Beat__c</members>
+<members>Journey_Plan_Line__c.Day_Of_Week__c</members>
+<members>Journey_Plan_Line__c.Is_Inactive__c</members>
+<members>Journey_Plan_Line__c.Journey_Plan__c</members>
+<members>Journey_Plan__c.CSO__c</members>
+<members>Journey_Plan__c.End_Date__c</members>
+<members>Journey_Plan__c.Is_Active__c</members>
+<members>Journey_Plan__c.Start_Date__c</members>
+<members>Loading_Sheet_Item__c.Product_Batch__c</members>
+<members>Loading_Sheet_Item__c.Product__c</members>
+<members>Loading_Sheet_Item__c.Quantity__c</members>
+<members>Loading_Sheet__c.Status__c</members>
+<members>Loading_Sheet__c.Trip__c</members>
+<members>Location.Vehicle__c</members>
+<members>Location.Warehouse__c</members>
+<members>Market_Area_Outlet__c.Active_Status__c</members>
+<members>Market_Area_Outlet__c.Assigned_Date__c</members>
+<members>Market_Area_Outlet__c.Effective_From__c</members>
+<members>Market_Area_Outlet__c.Market_Area__c</members>
+<members>Market_Area_Outlet__c.Master_Data_Key__c</members>
+<members>Market_Area_Outlet__c.Outlet__c</members>
+<members>Market_Area_Outlet__c.Status__c</members>
+<members>Market_Area__c.Assigned_Pincodes__c</members>
+<members>Market_Area__c.Category_Text__c</members>
+<members>Market_Area__c.Distributor__c</members>
+<members>Market_Area__c.District__c</members>
+<members>Market_Area__c.Is_Active__c</members>
+<members>Market_Area__c.Is_Default__c</members>
+<members>Market_Area__c.Market_Area_Code__c</members>
+<members>Market_Area__c.Market_Code__c</members>
+<members>Market_Area__c.Master_Data_Key__c</members>
+<members>Market_Area__c.Operating_Type__c</members>
+<members>Market_Area__c.State__c</members>
+<members>Market_Area__c.Status__c</members>
+<members>Market_Area__c.Town_Area__c</members>
+<members>Order.Distributor__c</members>
+<members>Order.Order_Status__c</members>
+<members>Order.SAP_Order_Number__c</members>
+<members>Order.SF_Order_Number__c</members>
+<members>Order.Visit__c</members>
+<members>Plant__c.Description__c</members>
+<members>Plant__c.Fulfilment_Type__c</members>
+<members>Plant__c.Master_Data_Key__c</members>
+<members>Plant__c.Plant_Code__c</members>
+<members>Pricing_Rule__c.Channel__c</members>
+<members>Pricing_Rule__c.Customer_Group__c</members>
+<members>Pricing_Rule__c.DATAB__c</members>
+<members>Pricing_Rule__c.DATBI__c</members>
+<members>Pricing_Rule__c.Distributor_No__c</members>
+<members>Pricing_Rule__c.ERDAT__c</members>
+<members>Pricing_Rule__c.External_Id__c</members>
+<members>Pricing_Rule__c.Has_Threshold__c</members>
+<members>Pricing_Rule__c.KBETR__c</members>
+<members>Pricing_Rule__c.KMEIN__c</members>
+<members>Pricing_Rule__c.KNUMH__c</members>
+<members>Pricing_Rule__c.KOPOS__c</members>
+<members>Pricing_Rule__c.KOTABNR__c</members>
+<members>Pricing_Rule__c.KPEIN__c</members>
+<members>Pricing_Rule__c.KSCHL__c</members>
+<members>Pricing_Rule__c.KSTBM__c</members>
+<members>Pricing_Rule__c.KSTBW__c</members>
+<members>Pricing_Rule__c.LOEKZ__c</members>
+<members>Pricing_Rule__c.Lane__c</members>
+<members>Pricing_Rule__c.Loaded_At__c</members>
+<members>Pricing_Rule__c.Lookup_Key__c</members>
+<members>Pricing_Rule__c.MANDT__c</members>
+<members>Pricing_Rule__c.MBIS__c</members>
+<members>Pricing_Rule__c.MFROM__c</members>
+<members>Pricing_Rule__c.Master_Data_Key__c</members>
+<members>Pricing_Rule__c.Material__c</members>
+<members>Pricing_Rule__c.NMATN__c</members>
+<members>Pricing_Rule__c.Needs_Recalc__c</members>
+<members>Pricing_Rule__c.Open_Ended_Validity__c</members>
+<members>Pricing_Rule__c.Region__c</members>
+<members>Pricing_Rule__c.Sales_Org__c</members>
+<members>Pricing_Rule__c.Sales_Unit__c</members>
+<members>Pricing_Rule__c.Source_Valid_To__c</members>
+<members>Pricing_Rule__c.Switched_Off_At__c</members>
+<members>Pricing_Rule__c.VAKEY__c</members>
+<members>Pricing_Rule__c.WAERS__c</members>
+<members>Product2.Category__c</members>
+<members>Product2.EAN__c</members>
+<members>Product2.HSN_Code__c</members>
+<members>Product2.LBD__c</members>
+<members>Product2.Material_Group__c</members>
+<members>Product2.Pack_type__c</members>
+<members>Product2.Sales_Unit__c</members>
+<members>Product2.Self_Pickup_Eligible__c</members>
+<members>Product2.Shelf_Life_Days__c</members>
+<members>Product2.Units_Per_Case__c</members>
+<members>Product_Batch_Stock__c.Available_Quantity__c</members>
+<members>Product_Batch_Stock__c.Hold_Quantity__c</members>
+<members>Product_Batch_Stock__c.Master_Data_Key__c</members>
+<members>Product_Batch_Stock__c.On_Hand_Quantity__c</members>
+<members>Product_Batch_Stock__c.PTD__c</members>
+<members>Product_Batch_Stock__c.Product_Batch__c</members>
+<members>Product_Batch_Stock__c.Quantity__c</members>
+<members>Product_Batch_Stock__c.Stock_Balance__c</members>
+<members>Product_Batch__c.Account_Product__c</members>
+<members>Product_Batch__c.Batch_Date__c</members>
+<members>Product_Batch__c.Batch_Number__c</members>
+<members>Product_Batch__c.Expiry_Date__c</members>
+<members>Product_Batch__c.MRP__c</members>
+<members>Product_Batch__c.Master_Data_Key__c</members>
+<members>Product_Batch__c.Mfg_Date__c</members>
+<members>Product_Batch__c.Product__c</members>
+<members>Product_Inventory__c.MARD_Quantity__c</members>
+<members>Product_Inventory__c.MARD_Updated_At__c</members>
+<members>Product_Inventory__c.MSEG_Quantity__c</members>
+<members>Product_Inventory__c.MSEG_Updated_At__c</members>
+<members>Product_Inventory__c.Plant__c</members>
+<members>Product_Inventory__c.Product__c</members>
+<members>Product_Inventory__c.SAP_Inventory_Key__c</members>
+<members>Product_Inventory__c.Unit__c</members>
+<members>Product_Inventory__c.VBBE_Quantity__c</members>
+<members>Product_Inventory__c.VBBE_Updated_At__c</members>
+<members>RCPL_Field_Persona__mdt.Active__c</members>
+<members>RCPL_Field_Persona__mdt.Description__c</members>
+<members>RCPL_Field_Persona__mdt.Permission_Set_Api_Name__c</members>
+<members>RetailVisitKpi.Visit_Task__c</members>
+<members>Retail_Store__c.Account__c</members>
+<members>Retail_Store__c.DeliveryFrequency__c</members>
+<members>Retail_Store__c.Delivery_Frequency_Type__c</members>
+<members>Retail_Store__c.Delivery_Method__c</members>
+<members>Retail_Store__c.Description__c</members>
+<members>Retail_Store__c.Designation__c</members>
+<members>Retail_Store__c.Domain__c</members>
+<members>Retail_Store__c.External_ID__c</members>
+<members>Retail_Store__c.Location__c</members>
+<members>Retail_Store__c.Name__c</members>
+<members>Retail_Store__c.Owner__c</members>
+<members>Retail_Store__c.PaymentMethod__c</members>
+<members>Retail_Store__c.Perfect_Store_Score__c</members>
+<members>Retail_Store__c.PrimaryContact__c</members>
+<members>Retail_Store__c.Priority__c</members>
+<members>Retail_Store__c.StoreType__c</members>
+<members>Retail_Store__c.Store_Insights__c</members>
+<members>Retail_Store__c.Type__c</members>
+<members>SMS_Config__mdt.API_Basic_Token__c</members>
+<members>SMS_Config__mdt.DLT_Entity_Id__c</members>
+<members>SMS_Config__mdt.DLT_Template_Id__c</members>
+<members>SMS_Config__mdt.Endpoint_Path__c</members>
+<members>SMS_Config__mdt.Is_Active__c</members>
+<members>SMS_Config__mdt.Max_Otp_Requests__c</members>
+<members>SMS_Config__mdt.Message_Template__c</members>
+<members>SMS_Config__mdt.Named_Credential_Name__c</members>
+<members>SMS_Config__mdt.Password__c</members>
+<members>SMS_Config__mdt.Rate_Limit_Window_Minutes__c</members>
+<members>SMS_Config__mdt.SMS_Content_Type__c</members>
+<members>SMS_Config__mdt.SMS_Encoding_Type__c</members>
+<members>SMS_Config__mdt.SMS_Type__c</members>
+<members>SMS_Config__mdt.Sender_Id__c</members>
+<members>SMS_Config__mdt.Timeout_Seconds__c</members>
+<members>SMS_Config__mdt.Token_Endpoint_Path__c</members>
+<members>SMS_Config__mdt.User_Name__c</members>
+<members>Sales_Order_Item__c.Amount__c</members>
+<members>Sales_Order_Item__c.Batch__c</members>
+<members>Sales_Order_Item__c.CGST__c</members>
+<members>Sales_Order_Item__c.Discount_Rs__c</members>
+<members>Sales_Order_Item__c.Discount_Type__c</members>
+<members>Sales_Order_Item__c.Final_Price__c</members>
+<members>Sales_Order_Item__c.Fulfilled_Quantity__c</members>
+<members>Sales_Order_Item__c.HSN_Code__c</members>
+<members>Sales_Order_Item__c.HSN__c</members>
+<members>Sales_Order_Item__c.IGST__c</members>
+<members>Sales_Order_Item__c.In_Stock__c</members>
+<members>Sales_Order_Item__c.Invoiced__c</members>
+<members>Sales_Order_Item__c.MRP__c</members>
+<members>Sales_Order_Item__c.Order_Qty__c</members>
+<members>Sales_Order_Item__c.Product2__c</members>
+<members>Sales_Order_Item__c.Product_Code__c</members>
+<members>Sales_Order_Item__c.Product_Name__c</members>
+<members>Sales_Order_Item__c.Product__c</members>
+<members>Sales_Order_Item__c.SGST__c</members>
+<members>Sales_Order_Item__c.SKU__c</members>
+<members>Sales_Order_Item__c.Sales_Order__c</members>
+<members>Sales_Order_Item__c.Tax_Amount__c</members>
+<members>Sales_Order_Item__c.Tax_Rate__c</members>
+<members>Sales_Order_Item__c.Taxable_Value__c</members>
+<members>Sales_Order_Item__c.Total_Price__c</members>
+<members>Sales_Order_Item__c.Total_Sub_Amount__c</members>
+<members>Sales_Order_Item__c.Total_With_Tax__c</members>
+<members>Sales_Order_Item__c.Total__c</members>
+<members>Sales_Order_Item__c.Unit_Price__c</members>
+<members>Sales_Order__c.Account_Name__c</members>
+<members>Sales_Order__c.Cancelled_Reason__c</members>
+<members>Sales_Order__c.City__c</members>
+<members>Sales_Order__c.Dispatch_Date__c</members>
+<members>Sales_Order__c.Dispatched__c</members>
+<members>Sales_Order__c.Distributor__c</members>
+<members>Sales_Order__c.Email__c</members>
+<members>Sales_Order__c.Expected_Delivery_Date__c</members>
+<members>Sales_Order__c.Grand_Total_Incl_Tax__c</members>
+<members>Sales_Order__c.In_Stock__c</members>
+<members>Sales_Order__c.Invoice_Date__c</members>
+<members>Sales_Order__c.Invoiced__c</members>
+<members>Sales_Order__c.Low_Stock_Items__c</members>
+<members>Sales_Order__c.Order_Date__c</members>
+<members>Sales_Order__c.Order_Type__c</members>
+<members>Sales_Order__c.Priority__c</members>
+<members>Sales_Order__c.Retailer_Code__c</members>
+<members>Sales_Order__c.Retailer_GSTIN__c</members>
+<members>Sales_Order__c.Retailer_Name__c</members>
+<members>Sales_Order__c.Retailer_Phone__c</members>
+<members>Sales_Order__c.Round_Off__c</members>
+<members>Sales_Order__c.Sales_Notes__c</members>
+<members>Sales_Order__c.Salesman__c</members>
+<members>Sales_Order__c.Status__c</members>
+<members>Sales_Order__c.Sub_Total__c</members>
+<members>Sales_Order__c.Time__c</members>
+<members>Sales_Order__c.Total_Amount__c</members>
+<members>Sales_Order__c.Total_In_Stock__c</members>
+<members>Sales_Order__c.Total_Items__c</members>
+<members>Sales_Order__c.Total_Quantity__c</members>
+<members>Scheme_Application__c.Application_Key__c</members>
+<members>Scheme_Application__c.Base_Qty__c</members>
+<members>Scheme_Application__c.Base_Value__c</members>
+<members>Scheme_Application__c.Calculation_Method__c</members>
+<members>Scheme_Application__c.Category_Code__c</members>
+<members>Scheme_Application__c.Claimable__c</members>
+<members>Scheme_Application__c.Company_Share__c</members>
+<members>Scheme_Application__c.Discount__c</members>
+<members>Scheme_Application__c.Distributor_Code__c</members>
+<members>Scheme_Application__c.Distributor_Outlet_Mapping__c</members>
+<members>Scheme_Application__c.Distributor_Share__c</members>
+<members>Scheme_Application__c.Fingerprint__c</members>
+<members>Scheme_Application__c.Free_Qty__c</members>
+<members>Scheme_Application__c.Invoice_Line__c</members>
+<members>Scheme_Application__c.Invoice__c</members>
+<members>Scheme_Application__c.Level__c</members>
+<members>Scheme_Application__c.Lines__c</members>
+<members>Scheme_Application__c.Order_Item__c</members>
+<members>Scheme_Application__c.Order__c</members>
+<members>Scheme_Application__c.Outlet_Key__c</members>
+<members>Scheme_Application__c.SEQUE__c</members>
+<members>Scheme_Application__c.Scheme_Code__c</members>
+<members>Scheme_Application__c.Scheme_Key__c</members>
+<members>Scheme_Application__c.Scheme_Version__c</members>
+<members>Scheme_Application__c.Source__c</members>
+<members>Scheme_Application__c.Stage__c</members>
+<members>Scheme_Application__c.Superseded__c</members>
+<members>Scheme_Slab__c.Benefit_Value__c</members>
+<members>Scheme_Slab__c.Free_Product__c</members>
+<members>Scheme_Slab__c.Free_Qty__c</members>
+<members>Scheme_Slab__c.From__c</members>
+<members>Scheme_Slab__c.Max_Discount__c</members>
+<members>Scheme_Slab__c.Max_Free_Qty__c</members>
+<members>Scheme_Slab__c.Repeat__c</members>
+<members>Scheme_Slab__c.Scheme__c</members>
+<members>Scheme_Slab__c.Slab_No__c</members>
+<members>Scheme_Slab__c.To__c</members>
+<members>Scheme_Slab__c.Weightage__c</members>
+<members>Scheme__c.Accrual_Stage_Scheme__c</members>
+<members>Scheme__c.Activated_On__c</members>
+<members>Scheme__c.Activation_Error__c</members>
+<members>Scheme__c.Approval_Completed__c</members>
+<members>Scheme__c.Approval_Steps__c</members>
+<members>Scheme__c.Approved_On__c</members>
+<members>Scheme__c.Assigned_Quota__c</members>
+<members>Scheme__c.Benefit_Type__c</members>
+<members>Scheme__c.Budget__c</members>
+<members>Scheme__c.Calculation_Method__c</members>
+<members>Scheme__c.Cap_Period__c</members>
+<members>Scheme__c.Cap_Scope__c</members>
+<members>Scheme__c.Category__c</members>
+<members>Scheme__c.Channels__c</members>
+<members>Scheme__c.Condition_Base__c</members>
+<members>Scheme__c.Contract__c</members>
+<members>Scheme__c.Controls_Summary__c</members>
+<members>Scheme__c.Cumulative__c</members>
+<members>Scheme__c.Description__c</members>
+<members>Scheme__c.Disbursement_Method__c</members>
+<members>Scheme__c.Discontinue_Reason__c</members>
+<members>Scheme__c.Discontinued_On__c</members>
+<members>Scheme__c.Discount__c</members>
+<members>Scheme__c.Duplicate_Warnings__c</members>
+<members>Scheme__c.Exclude_Key_Types__c</members>
+<members>Scheme__c.Exclusion_Flag__c</members>
+<members>Scheme__c.Execution_Mode__c</members>
+<members>Scheme__c.Finance_Approver_1__c</members>
+<members>Scheme__c.Finance_Approver_2__c</members>
+<members>Scheme__c.Funding_Company_Pct__c</members>
+<members>Scheme__c.Funding_Distributor_Pct__c</members>
+<members>Scheme__c.Funding_Type__c</members>
+<members>Scheme__c.Include_Key_Types__c</members>
+<members>Scheme__c.Level__c</members>
+<members>Scheme__c.Limit_Period__c</members>
+<members>Scheme__c.Locked__c</members>
+<members>Scheme__c.Manufacturer__c</members>
+<members>Scheme__c.Market_Scope__c</members>
+<members>Scheme__c.Max_Applications_Per_Outlet__c</members>
+<members>Scheme__c.Max_Benefit__c</members>
+<members>Scheme__c.Max_Eligible_Qty__c</members>
+<members>Scheme__c.Max_Eligible_Value__c</members>
+<members>Scheme__c.Max_Outlets__c</members>
+<members>Scheme__c.Max_Transactions__c</members>
+<members>Scheme__c.Monitoring_Scope__c</members>
+<members>Scheme__c.OMS_Required__c</members>
+<members>Scheme__c.Parent_Scheme__c</members>
+<members>Scheme__c.Product_Category__c</members>
+<members>Scheme__c.Quota_Scope__c</members>
+<members>Scheme__c.Quota_Unit__c</members>
+<members>Scheme__c.Quota_Valid_From__c</members>
+<members>Scheme__c.Quota_Valid_To__c</members>
+<members>Scheme__c.Reason_Code__c</members>
+<members>Scheme__c.Rejection_Comment__c</members>
+<members>Scheme__c.Retail_Store__c</members>
+<members>Scheme__c.Rounding_Rule__c</members>
+<members>Scheme__c.SEQUE_Not_In_Master__c</members>
+<members>Scheme__c.SEQUE__c</members>
+<members>Scheme__c.Scale_Type__c</members>
+<members>Scheme__c.Scheme_Code__c</members>
+<members>Scheme__c.Scheme_End_Date__c</members>
+<members>Scheme__c.Scheme_End__c</members>
+<members>Scheme__c.Scheme_Start_Date__c</members>
+<members>Scheme__c.Scheme_Type__c</members>
+<members>Scheme__c.Search_Master_Row__c</members>
+<members>Scheme__c.Search_Rule__c</members>
+<members>Scheme__c.Search_Seq_Breakup__c</members>
+<members>Scheme__c.Stackable__c</members>
+<members>Scheme__c.Status__c</members>
+<members>Scheme__c.Submitted_By__c</members>
+<members>Scheme__c.Submitted_On__c</members>
+<members>Scheme__c.Type_of_Scheme__c</members>
+<members>Scheme__c.Valid_From__c</members>
+<members>Scheme__c.Valid_To__c</members>
+<members>Scheme__c.Validity_of_Scheme__c</members>
+<members>Scheme__c.Version__c</members>
+<members>Scheme__c.WSD_Net_Order__c</members>
+<members>Scheme__c.WSD_Tier__c</members>
+<members>Scheme__c.WSD_Zone__c</members>
+<members>Scheme__c.WSD__c</members>
+<members>Stock_Adjustment__c.Account_Product__c</members>
+<members>Stock_Adjustment__c.Product_Batch__c</members>
+<members>Survey_Answers__c.Survey_Question__c</members>
+<members>Survey_Answers__c.Survey__c</members>
+<members>Survey_Question__c.Allowed_Values__c</members>
+<members>Survey_Question__c.Answer_Type__c</members>
+<members>Survey_Question__c.Mandatory__c</members>
+<members>Survey_Question__c.Master_Data_Key__c</members>
+<members>Survey_Question__c.Question_Text__c</members>
+<members>Survey_Question__c.Sequence__c</members>
+<members>Survey_Question__c.Survey__c</members>
+<members>Survey__c.Master_Data_Key__c</members>
+<members>Target_Achievement__c.Target__c</members>
+<members>Target__c.Parent_Target__c</members>
+<members>Target__c.User__c</members>
+<members>Trip_Reconciliation_Item__c.Damaged_Quantity__c</members>
+<members>Trip_Reconciliation_Item__c.Product_Batch__c</members>
+<members>Trip_Reconciliation_Item__c.Product__c</members>
+<members>Trip_Reconciliation_Item__c.Sold_Quantity__c</members>
+<members>Trip_Reconciliation_Item__c.Trip_Reconciliation__c</members>
+<members>Trip_Reconciliation_Item__c.Unsold_Quantity__c</members>
+<members>Trip_Reconciliation__c.Status__c</members>
+<members>Trip_Reconciliation__c.Trip__c</members>
+<members>Trip_Reconciliation__c.Van_Location__c</members>
+<members>Trip_Reconciliation__c.Warehouse_Location__c</members>
+<members>User.Device_Token__c</members>
+<members>User.Persona__c</members>
+<members>UserProvisioningEvent__e.Action__c</members>
+<members>UserProvisioningEvent__e.Payload__c</members>
+<members>Visit.ASE_Flag__c</members>
+<members>Visit.Action_Plan_Template__c</members>
+<members>Visit.Attendance__c</members>
+<members>Visit.Beat_Outlet__c</members>
+<members>Visit.Check_In_Distance_M__c</members>
+<members>Visit.Check_In_Location__c</members>
+<members>Visit.Check_In_Time__c</members>
+<members>Visit.Check_Out_Location__c</members>
+<members>Visit.Check_Out_Time__c</members>
+<members>Visit.Distributor__c</members>
+<members>Visit.Is_Joint_Visit__c</members>
+<members>Visit.Joint_Visit_User__c</members>
+<members>Visit.Journey_Plan_Line__c</members>
+<members>Visit.Missed_Reason__c</members>
+<members>Visit.Notes__c</members>
+<members>Visit.Outlet__c</members>
+<members>Visit.Survey__c</members>
+<members>Visit.Trip_List__c</members>
+<members>Visit.Visit_Type__c</members>
+<members>Visit.Visited_By__c</members>
+<members>Visit.Within_Geofence__c</members>
+<members>Visit_Task__c.Action_Plan_Template_Item__c</members>
+<members>Visit_Task__c.Assessment_Task_Definition__c</members>
+<members>Visit_Task__c.Client_Uuid__c</members>
+<members>Visit_Task__c.IsRequired__c</members>
+<members>Visit_Task__c.Name__c</members>
+<members>Visit_Task__c.SequenceNumber__c</members>
+<members>Visit_Task__c.StartTime__c</members>
+<members>Visit_Task__c.Status__c</members>
+<members>Visit_Task__c.Visit__c</members>
+<members>Wallet_Transaction__c.Amount__c</members>
+<members>Wallet_Transaction__c.Invoice_Line_Item__c</members>
+<members>Wallet_Transaction__c.Reference_Claim__c</members>
+<members>Wallet_Transaction__c.Remarks__c</members>
+<members>Wallet_Transaction__c.Scheme_Application__c</members>
+<members>Wallet_Transaction__c.Transaction_Date__c</members>
+<members>Wallet_Transaction__c.Transaction_Type__c</members>
+<members>Wallet_Transaction__c.Wallet__c</members>
+<members>Wallet__c.Account_Relationship__c</members>
+<members>Wallet__c.Balance__c</members>
+<members>Wallet__c.Status__c</members>
+<members>cgcloud__Inventory_Transaction__c.GRN_Line__c</members>
+<members>cgcloud__Inventory_Transaction__c.Idempotency_Key__c</members>
+<members>cgcloud__Inventory_Transaction__c.Invoice_Line__c</members>
+<members>cgcloud__Inventory_Transaction__c.Product_Batch_Stock__c</members>
+<members>cgcloud__Inventory_Transaction__c.Product_Batch__c</members>
+<members>cgcloud__Inventory_Transaction__c.Qty_Change_Hold__c</members>
+<members>cgcloud__Inventory_Transaction__c.Qty_Change_On_Hand__c</members>
+<members>cgcloud__Inventory_Transaction__c.Source_Ref_Id__c</members>
+<members>cgcloud__Inventory_Transaction__c.Source_Ref_Type__c</members>
+<members>cgcloud__Inventory_Transaction__c.Stock_Adjustment__c</members>
+<members>cgcloud__Inventory_Transaction__c.Stock_Location__c</members>
+<members>cgcloud__Inventory_Transaction__c.Transaction_Type__c</members>
+<members>cgcloud__Inventory_Transaction__c.Trip_Reconciliation__c</members>
+<members>cgcloud__Inventory_Transaction__c.Trip__c</members>
+<members>cgcloud__Inventory__c.Account_Product__c</members>
+<members>cgcloud__Inventory__c.Available_Quantity__c</members>
+<members>cgcloud__Inventory__c.Hold_Quantity__c</members>
+<members>cgcloud__Inventory__c.On_Hand_Quantity__c</members>
+<members>cgcloud__Inventory__c.Stock_Location__c</members>
+<members>cgcloud__Order_Item__c.SAP_Order_Item_Key__c</members>
+<members>cgcloud__Trip_List__c.Account__c</members>
+<members>cgcloud__Trip_List__c.Beat__c</members>
+<members>cgcloud__Trip_List__c.Driver__c</members>
+<members>cgcloud__Trip_List__c.Status__c</members>
+<members>cgcloud__Trip_List__c.Stock_Location__c</members>
+<members>cgcloud__Trip_List__c.Van_Location__c</members>
+<members>cgcloud__Trip_List__c.Vehicle__c</members>
+<members>cgcloud__Trip_List__c.Warehouse_Location__c</members>
+<members>cgcloud__Vehicle__c.Assigned_Driver__c</members>
+<members>cgcloud__Vehicle__c.Cargo_Volume_CuM__c</members>
+<members>cgcloud__Vehicle__c.Distributor__c</members>
+<members>cgcloud__Vehicle__c.Driver_Name__c</members>
+<members>cgcloud__Vehicle__c.Gross_Payload_Kg__c</members>
+<members>cgcloud__Vehicle__c.Insurance_Expiry__c</members>
+<members>cgcloud__Vehicle__c.Make__c</members>
+<members>cgcloud__Vehicle__c.Model__c</members>
+<members>cgcloud__Vehicle__c.Status__c</members>
+<members>cgcloud__Vehicle__c.Vehicle_Type__c</members>
+<members>cgcloud__Warehouse__c.Distributor__c</members>
+<name>CustomField</name>
+</types>
+<types>
+<members>CustomLabels</members>
+<name>CustomLabels</name>
+</types>
+<types>
+<members>DMS_User_Provisioning_Config.Default</members>
+<members>DMS_User_Role_Config.CSO_Salesman_Sales_Officer</members>
+<members>DMS_User_Role_Config.Delivery_Driver</members>
+<members>DMS_User_Role_Config.Distributor_Cashier</members>
+<members>DMS_User_Role_Config.Picker</members>
+<members>DMS_User_Role_Config.Van_Sales_DSR</members>
+<members>DMS_User_Role_Config.Warehouse_Picker</members>
+<members>RCPL_Field_Persona.ASE_PSG</members>
+<members>RCPL_Field_Persona.CSO_PSG</members>
+<members>RCPL_Field_Persona.RCPL_Field_Execute</members>
+<members>RCPL_Field_Persona.RCPL_Field_Supervise</members>
+<members>SMS_Config.Default_Config</members>
+<members>SMS_Config.Login_OTP_Verification</members>
+<name>CustomMetadata</name>
+</types>
+<types>
+<members>RCPL_Attendance_Alert</members>
+<members>RCPL_Test_Push</members>
+<name>CustomNotificationType</name>
+</types>
+<types>
+<members>Account</members>
+<members>Account_Location__c</members>
+<members>Account_Product__c</members>
+<members>Account_SKU_Stock__c</members>
+<members>App_Configuration__c</members>
+<members>Attendance__c</members>
+<members>Beat_Outlet__c</members>
+<members>Beat__c</members>
+<members>Case</members>
+<members>Claim_Line_Item__c</members>
+<members>Claim__c</members>
+<members>Collection__c</members>
+<members>Contact</members>
+<members>DMS_User_Provisioning_Config__mdt</members>
+<members>DMS_User_Role_Config__mdt</members>
+<members>Data_Import_Log__c</members>
+<members>Distributor_Category_Mapping__c</members>
+<members>Distributor_Outlet_Category__c</members>
+<members>GRN_Line__c</members>
+<members>GRN__c</members>
+<members>Inventory_Drift_Log__c</members>
+<members>Invoice_Line_Item__c</members>
+<members>Invoice__c</members>
+<members>Journey_Plan_Line__c</members>
+<members>Journey_Plan__c</members>
+<members>Loading_Sheet_Item__c</members>
+<members>Loading_Sheet__c</members>
+<members>Location</members>
+<members>Market_Area_Outlet__c</members>
+<members>Market_Area__c</members>
+<members>Order</members>
+<members>Plant__c</members>
+<members>Pricing_Rule__c</members>
+<members>Product2</members>
+<members>Product_Batch_Stock__c</members>
+<members>Product_Batch__c</members>
+<members>Product_Inventory__c</members>
+<members>RCPL_Field_Persona__mdt</members>
+<members>RetailVisitKpi</members>
+<members>Retail_Store__c</members>
+<members>SMS_Config__mdt</members>
+<members>Sales_Order_Item__c</members>
+<members>Sales_Order__c</members>
+<members>Scheme_Application__c</members>
+<members>Scheme_Search_Rule__c</members>
+<members>Scheme_Slab__c</members>
+<members>Scheme__c</members>
+<members>Stock_Adjustment__c</members>
+<members>Survey_Answers__c</members>
+<members>Survey_Question__c</members>
+<members>Survey__c</members>
+<members>Target_Achievement__c</members>
+<members>Target__c</members>
+<members>Trip_Reconciliation_Item__c</members>
+<members>Trip_Reconciliation__c</members>
+<members>User</members>
+<members>UserProvisioningEvent__e</members>
+<members>Visit</members>
+<members>Visit_Task__c</members>
+<members>Wallet_Transaction__c</members>
+<members>Wallet__c</members>
+<members>cgcloud__Inventory_Transaction__c</members>
+<members>cgcloud__Inventory__c</members>
+<members>cgcloud__Order_Item__c</members>
+<members>cgcloud__Trip_List__c</members>
+<members>cgcloud__Vehicle__c</members>
+<members>cgcloud__Warehouse__c</members>
+<name>CustomObject</name>
+</types>
+<types>
+<members>Account-Account Layout</members>
+<members>Account-CSO User</members>
+<members>Account-Distributor</members>
+<members>Account-Outlet</members>
+<members>Account-Sub-Distributor Layout</members>
+<members>Account_Product__c-Account Product Layout</members>
+<members>ActionPlan-Action Plan Layout</members>
+<members>App_Configuration__c-App Configuration Layout</members>
+<members>Attendance__c-Attendance Layout</members>
+<members>Beat_Outlet__c-Beat Outlet Layout</members>
+<members>Beat__c-Beat %28Route%29 Layout</members>
+<members>Claim_Line_Item__c-Claim Line Item Layout</members>
+<members>Claim__c-Claim Layout</members>
+<members>Collection__c-Collection Layout</members>
+<members>Contact-Contact Layout</members>
+<members>Distributor_Category_Mapping__c-Distributor CSO Mapping Layout</members>
+<members>Distributor_Outlet_Category__c-Distributor Outlet Category Layout</members>
+<members>GRN_Line__c-GRN Line Item Layout</members>
+<members>GRN_Line__c-GRN Line Layout</members>
+<members>GRN__c-GRN Layout</members>
+<members>Invoice_Line_Item__c-Invoice Line Item Layout</members>
+<members>Invoice__c-Invoice Layout</members>
+<members>Journey_Plan_Line__c-Journey Plan Line Layout</members>
+<members>Journey_Plan__c-Journey Plan Layout</members>
+<members>Market_Area_Outlet__c-Market Area Outlet Layout</members>
+<members>Market_Area__c-Market Area Layout</members>
+<members>Order-Counter Sale</members>
+<members>Order-Demand Capture</members>
+<members>Order-Opportunity Sale</members>
+<members>Order-Order Layout</members>
+<members>Order-Primary</members>
+<members>Order-Return</members>
+<members>Order-Secondary</members>
+<members>Order-Van Sale</members>
+<members>Plant__c-Plant Layout</members>
+<members>Pricing_Rule__c-Pricing Rule Layout</members>
+<members>Product2-Product Layout</members>
+<members>ProductCategory-Category Layout</members>
+<members>Product_Batch_Stock__c-Product Batch Stock Layout</members>
+<members>Product_Batch__c-Product Batch Layout</members>
+<members>Product_Inventory__c-Product Inventory Layout</members>
+<members>Scheme_Application__c-Scheme Application Layout</members>
+<members>Scheme_Search_Rule__c-Scheme Search Rule Layout</members>
+<members>Scheme_Slab__c-Scheme Slab Layout</members>
+<members>Scheme__c-Scheme Layout</members>
+<members>Stock_Adjustment__c-Stock Adjustment Layout</members>
+<members>Survey_Answers__c-Survey Answers Layout</members>
+<members>Survey_Question__c-Survey Question Layout</members>
+<members>Survey__c-Survey Layout</members>
+<members>Target_Achievement__c-Target Achievement Layout</members>
+<members>Target__c-Target Layout</members>
+<members>Trip_Reconciliation__c-Trip Reconciliation Layout</members>
+<members>User-User Layout</members>
+<members>UserAlt-User Profile Layout</members>
+<members>Visit-CSO Visit</members>
+<members>Visit-Delivery Stop</members>
+<members>Visit-Van Sales Visit</members>
+<members>Visit_Task__c-Visit Task Layout</members>
+<members>Wallet_Transaction__c-Wallet Transaction Layout</members>
+<members>Wallet__c-Wallet Layout</members>
+<name>Layout</name>
+</types>
+<types>
+<members>dmsGRNComponent</members>
+<members>dmsGrnDetailsComponent</members>
+<members>dmsInventoryDashboard</members>
+<members>dmsMarketAreaList</members>
+<members>dmsOutlet360</members>
+<members>dmsStockUpload</members>
+<members>dmsUiKit</members>
+<members>dmsUserManagement</members>
+<members>dmsVehicleVanMaster</members>
+<members>dualLoginScreen</members>
+<name>LightningComponentBundle</name>
+</types>
+<types>
+<members>Account_Location__c.All</members>
+<members>Account_SKU_Stock__c.All</members>
+<members>Beat__c.All</members>
+<members>Claim__c.Pending_Finance_Review</members>
+<members>Claim__c.Settled_Claims</members>
+<members>Collection__c.All_Collections</members>
+<members>Collection__c.Cleared_Collections</members>
+<members>Distributor_Category_Mapping__c.All</members>
+<members>GRN__c.All</members>
+<members>Invoice__c.All</members>
+<members>Market_Area__c.All</members>
+<members>Plant__c.All</members>
+<members>Product2.AllProducts</members>
+<members>Product_Inventory__c.All</members>
+<members>Retail_Store__c.All</members>
+<members>Sales_Order__c.All</members>
+<members>Sales_Order__c.Pending_Primary_Order</members>
+<members>Sales_Order__c.Primary_Orders</members>
+<members>Sales_Order__c.SFA_To_Bill_Pending_Order</members>
+<members>Scheme__c.All</members>
+<members>Wallet__c.Active_Wallets</members>
+<members>Wallet__c.All_Wallets</members>
+<name>ListView</name>
+</types>
+<types>
+<members>Dual_Login_Guest_Access</members>
+<members>RCPL_Admin_Full</members>
+<members>RCPL_Approvals_ASM</members>
+<members>RCPL_Base_External</members>
+<members>RCPL_Base_Internal</members>
+<members>RCPL_Beat_Manage</members>
+<members>RCPL_Beat_Transfer_Receive</members>
+<members>RCPL_Billing_Collection</members>
+<members>RCPL_Budget_Manage</members>
+<members>RCPL_Bulk_Load</members>
+<members>RCPL_Case_Vertical</members>
+<members>RCPL_Claims_Approve</members>
+<members>RCPL_Claims_Submit</members>
+<members>RCPL_Credit_Note</members>
+<members>RCPL_DMS_Operate</members>
+<members>RCPL_Data_Import_Log_Access</members>
+<members>RCPL_Delivery_Execute</members>
+<members>RCPL_Drift_Audit_Access</members>
+<members>RCPL_Field_Execute</members>
+<members>RCPL_Field_Supervise</members>
+<members>RCPL_Integration_Full</members>
+<members>RCPL_Inventory_Manage</members>
+<members>RCPL_Invoice_Dispatch_Access</members>
+<members>RCPL_Journey_Plan_Manage</members>
+<members>RCPL_Mobile_Offline</members>
+<members>RCPL_Order_Capture</members>
+<members>RCPL_Outlet_Onboard</members>
+<members>RCPL_Reporting_Build</members>
+<members>RCPL_Reporting_Read</members>
+<members>RCPL_Sales_Read</members>
+<members>RCPL_Sales_Supervise</members>
+<members>RCPL_Scheme_Author</members>
+<members>RCPL_Setup_Audit</members>
+<members>RCPL_Survey_Author</members>
+<members>RCPL_Target_Allocate</members>
+<members>RCPL_Van_Sales_Execute</members>
+<members>RCPL_Van_Transfer_Access</members>
+<name>PermissionSet</name>
+</types>
+<types>
+<members>ASE_PSG</members>
+<members>ASM_PSG</members>
+<members>CSO_PSG</members>
+<members>Delivery_Driver_PSG</members>
+<members>Distributor_Coordinator_PSG</members>
+<members>Finance_PSG</members>
+<members>Integration_PSG</members>
+<members>NSH_PSG</members>
+<members>RSM_PSG</members>
+<members>SM_PSG</members>
+<members>System_Admin_PSG</members>
+<members>TeleSales_PSG</members>
+<members>Trade_Marketing_PSG</members>
+<members>Van_Sales_DSR_PSG</members>
+<members>Vertical_Head_PSG</members>
+<name>PermissionSetGroup</name>
+</types>
+<types>
+<members>Admin</members>
+<members>RCPL Community Profile</members>
+<members>RCPL Integration Profile %28API only%29</members>
+<members>RCPL Internal Profile</members>
+<name>Profile</name>
+</types>
+<types>
+<members>Account.CSO_User</members>
+<members>Account.Outlet</members>
+<members>Account.Sub_distributor</members>
+<members>Beat__c.Dummy</members>
+<members>Beat__c.Regular</members>
+<members>Beat__c.Van_Sales_Route</members>
+<members>Contact.Driver</members>
+<members>Contact.Van_Sales</members>
+<members>Location.Delivery_Vehicle</members>
+<members>Location.Van</members>
+<members>Location.Warehouse</members>
+<members>Order.Counter_Sale</members>
+<members>Order.Demand_Capture</members>
+<members>Order.Opportunity_Sale</members>
+<members>Order.Primary</members>
+<members>Order.Return</members>
+<members>Order.Secondary</members>
+<members>Order.Van_Sale</members>
+<members>Retail_Store__c.Mechanic</members>
+<members>Retail_Store__c.Retailer</members>
+<members>Sales_Order__c.Direct_Order</members>
+<members>Sales_Order__c.Primary_Order</members>
+<members>Sales_Order__c.Secondary_Order</members>
+<members>Visit.CSO_Visit</members>
+<members>Visit.Delivery_Stop</members>
+<members>Visit.HQ</members>
+<members>Visit.Van_Sales_Visit</members>
+<members>cgcloud__Trip_List__c.Delivary_Run</members>
+<members>cgcloud__Trip_List__c.Van_Sales_Trip</members>
+<name>RecordType</name>
+</types>
+<types>
+<members>Accounts_with_Distributor_Outlet_Mappings_with_Distributor_Outlet_Categories</members>
+<name>ReportType</name>
+</types>
+<types>
+<members>Admin</members>
+<members>Andheri_Foods_ASE</members>
+<members>AndhraPradesh_SH</members>
+<members>Assam_SH</members>
+<members>Beverages_VH</members>
+<members>Bihar_SH</members>
+<members>Biscuits_VH</members>
+<members>Chhattisgarh_SH</members>
+<members>Confectionery_VH</members>
+<members>Delhi_Central_Foods_ASE</members>
+<members>Delhi_Central_Foods_ASM</members>
+<members>Delhi_SH</members>
+<members>East_RSM</members>
+<members>Gujarat_SH</members>
+<members>HPC_VH</members>
+<members>Haryana_SH</members>
+<members>HimachalPradesh_SH</members>
+<members>JammuKashmir_SH</members>
+<members>Jharkhand_SH</members>
+<members>Karnataka_SH</members>
+<members>Kerala_SH</members>
+<members>MadhyaPradesh_SH</members>
+<members>Maharashtra_SH</members>
+<members>Mumbai_West_Foods_ASM</members>
+<members>NSM</members>
+<members>North1_RSM</members>
+<members>North2_RSM</members>
+<members>Odisha_SH</members>
+<members>Punjab_SH</members>
+<members>Rajasthan_SH</members>
+<members>South1_RSM</members>
+<members>South2_RSM</members>
+<members>Staples_VH</members>
+<members>TamilNadu_SH</members>
+<members>Telangana_SH</members>
+<members>UttarPradesh_SH</members>
+<members>Uttarakhand_SH</members>
+<members>WestBengal_SH</members>
+<members>West_RSM</members>
+<name>Role</name>
+</types>
+<types>
+<members>App_Configuration__c</members>
+<members>Attendance__c</members>
+<members>Beat__c</members>
+<members>Claim__c</members>
+<members>Distributor_Category_Mapping__c</members>
+<members>GRN__c</members>
+<members>Journey_Plan__c</members>
+<members>Market_Area__c</members>
+<members>Plant__c</members>
+<members>Pricing_Rule__c</members>
+<members>Product_Batch__c</members>
+<members>Product_Inventory__c</members>
+<members>Scheme_Search_Rule__c</members>
+<members>Scheme_Slab__c</members>
+<members>Scheme__c</members>
+<members>Stock_Adjustment__c</members>
+<members>Survey__c</members>
+<members>Target__c</members>
+<name>SharingRules</name>
+</types>
+<types>
+<members>LocationType</members>
+<name>StandardValueSet</name>
+</types>
+<types>
+<members>RCPL_Logo_New</members>
+<name>StaticResource</name>
+</types>
+<types>
+<members>RCPL_UAP_ASE</members>
+<members>RCPL_UAP_ASM</members>
+<members>RCPL_UAP_CSO</members>
+<members>RCPL_UAP_Distributor_coordinator</members>
+<members>RCPL_UAP_Driver</members>
+<members>RCPL_UAP_Finance</members>
+<members>RCPL_UAP_Integration</members>
+<members>RCPL_UAP_NSH</members>
+<members>RCPL_UAP_RSM</members>
+<members>RCPL_UAP_SM</members>
+<members>RCPL_UAP_System_Admin</members>
+<members>RCPL_UAP_Telesales</members>
+<members>RCPL_UAP_Trade_Marketing</members>
+<members>RCPL_UAP_Van_Sales</members>
+<members>RCPL_UAP_Vertical_Head</members>
+<name>UserAccessPolicy</name>
+</types>
+<types>
+<members>Invoice__c.No_Invoice_For_Cancelled_Order</members>
+<members>Market_Area__c.VR_MA_BlockDefaultDeselection</members>
+<members>Market_Area__c.VR_MA_PincodeFormat</members>
+<name>ValidationRule</name>
+</types>
+<types>
+<members>Sales_Order__c.New_Order</members>
+<name>WebLink</name>
+</types>
+<version>67.0</version>
 </Package>

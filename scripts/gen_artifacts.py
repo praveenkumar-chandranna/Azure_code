@@ -429,6 +429,7 @@ for f in changed_files:
         continue
 
     # labels — extract only changed <fullName> values from git diff
+    # Scans all changed <labels> blocks: a block is "changed" if any line in it has a + or - prefix
     if folder == "labels":
         diff_from = os.environ.get("DIFF_FROM", "")
         diff_to   = os.environ.get("DIFF_TO", "")
@@ -437,15 +438,45 @@ for f in changed_files:
             try:
                 import subprocess
                 result = subprocess.run(
-                    ["git", "diff", diff_from, diff_to, "--",
+                    ["git", "diff", diff_from, diff_to, "-U9999", "--",
                      f"force-app/main/default/labels/{filename}"],
                     capture_output=True, text=True, cwd=build_sources
                 )
+                # Parse diff into <labels>...</labels> blocks, flag blocks with any +/- line
+                current_block = []
+                current_full_name = None
+                block_changed = False
                 for line in result.stdout.splitlines():
-                    if line.startswith("+") and not line.startswith("+++"):
-                        m = re.search(r'<fullName>([^<]+)</fullName>', line)
-                        if m:
-                            changed_label_names.add(m.group(1).strip())
+                    stripped = line[1:] if line and line[0] in ('+', '-', ' ') else line
+                    if '<labels>' in stripped:
+                        current_block = []
+                        current_full_name = None
+                        block_changed = False
+                    if line and line[0] in ('+', '-') and not line.startswith('+++') and not line.startswith('---'):
+                        block_changed = True
+                    fn_match = re.search(r'<fullName>([^<]+)</fullName>', stripped)
+                    if fn_match:
+                        current_full_name = fn_match.group(1).strip()
+                    if '</labels>' in stripped:
+                        if block_changed and current_full_name:
+                            changed_label_names.add(current_full_name)
+                        current_full_name = None
+                        block_changed = False
+                # If diff was empty (new file not yet tracked from DIFF_FROM),
+                # fall back to parsing the file directly — all labels are new
+                if not changed_label_names and not result.stdout.strip():
+                    label_path = os.path.join(build_sources, "force-app", "main", "default", "labels", filename)
+                    if os.path.isfile(label_path):
+                        print(f"New labels file detected - parsing all labels from {filename}")
+                        try:
+                            ltree = ET.parse(label_path)
+                            ns = {"sf": "http://soap.sforce.com/2006/04/metadata"}
+                            for label_el in ltree.findall(".//sf:labels", ns):
+                                full_name = label_el.findtext("sf:fullName", namespaces=ns)
+                                if full_name:
+                                    changed_label_names.add(full_name.strip())
+                        except ET.ParseError as e:
+                            print(f"WARNING: Could not parse new labels file: {e}")
             except Exception as e:
                 print(f"WARNING: git diff for labels failed: {e}")
         if changed_label_names:
