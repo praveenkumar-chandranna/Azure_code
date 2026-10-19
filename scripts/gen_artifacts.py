@@ -34,6 +34,15 @@ TYPE_MAP = {
     "objects":                            "CustomObject",
     "layouts":                            "Layout",
     "quickActions":                       "QuickAction",
+    "compactLayouts":                     "CompactLayout",
+    "fieldSets":                          "FieldSet",
+    "listViews":                          "ListView",
+    "recordTypes":                        "RecordType",
+    "validationRules":                    "ValidationRule",
+    "webLinks":                           "WebLink",
+    "businessProcesses":                  "BusinessProcess",
+    "indexes":                            "Index",
+    "sharingReasons":                     "SharingReason",
     "globalValueSets":                    "GlobalValueSet",
     "standardValueSets":                  "StandardValueSet",
     "duplicateRules":                     "DuplicateRule",
@@ -44,15 +53,7 @@ TYPE_MAP = {
     "escalationRules":                    "EscalationRules",
     "approvalProcesses":                  "ApprovalProcess",
     "pathAssistants":                     "PathAssistant",
-    "compactLayouts":                     "CompactLayout",
-    "fieldSets":                          "FieldSet",
-    "listViews":                          "ListView",
-    "recordTypes":                        "RecordType",
-    "validationRules":                    "ValidationRule",
-    "webLinks":                           "WebLink",
-    "businessProcesses":                  "BusinessProcess",
-    "indexes":                            "Index",
-    "sharingReasons":                     "SharingReason",
+
     # ── Automation ───────────────────────────────────────────────────────────
     "flows":                              "Flow",
     "flowCategories":                     "FlowCategory",
@@ -343,6 +344,13 @@ def strip_suffix(name):
         '', name
     )
 
+FOLDER_TYPE_MAP = {
+    "reports":        ("Report",         "ReportFolder"),
+    "dashboards":     ("Dashboard",      "DashboardFolder"),
+    "emailTemplates": ("EmailTemplate",  "EmailTemplateFolder"),
+    "documents":      ("Document",       "DocumentFolder"),
+}
+
 members_by_type = {}
 
 def add(meta_type, member):
@@ -360,12 +368,6 @@ for f in changed_files:
     # Folder-based (reports, dashboards, emailTemplates, documents)
     # Standard package.xml requires: FolderType member = subFolder name
     #                                 ContentType member = subFolder/memberName
-    FOLDER_TYPE_MAP = {
-        "reports":        ("Report",         "ReportFolder"),
-        "dashboards":     ("Dashboard",      "DashboardFolder"),
-        "emailTemplates": ("EmailTemplate",  "EmailTemplateFolder"),
-        "documents":      ("Document",       "DocumentFolder"),
-    }
     if folder in FOLDER_TYPE_MAP:
         content_type, folder_type = FOLDER_TYPE_MAP[folder]
         if len(parts) >= 3:
@@ -376,7 +378,7 @@ for f in changed_files:
 
     # objectTranslations
     if folder == "objectTranslations":
-        add("CustomObjectTranslation", parts[1])
+        add("CustomObjectTranslation", strip_suffix(parts[1]))
         continue
 
     # objects
@@ -391,9 +393,8 @@ for f in changed_files:
     # territory2Models hierarchy
     if folder == "territory2Models":
         model_name = parts[1]
-        if len(parts) == 3:
-            add("Territory2Model", model_name)
-        elif len(parts) >= 4:
+        add("Territory2Model", model_name)
+        if len(parts) >= 4:
             sub = parts[2]
             member_name = strip_suffix(parts[3])
             if sub == "territory2Types":
@@ -438,6 +439,10 @@ for f in changed_files:
         continue
 
     # General flat types
+    # These folders only exist nested under objects/ — if seen at top level it's a mis-placed file
+    if folder in SUB_TYPE_MAP:
+        print(f"WARNING: '{folder}' is an object child type and must live under objects/<ObjName>/{folder}/ – skipped: '{f}'")
+        continue
     meta_type = TYPE_MAP.get(folder)
     if meta_type:
         add(meta_type, strip_suffix(filename))
@@ -469,9 +474,13 @@ with open(pkg_path, "wb") as fh:
 print(f"package.xml   -> {pkg_path}")
 
 # Classify ApexClass members into test vs main
+TEST_NAME_PATTERNS = re.compile(
+    r'(test|tests|_test|mock|testdata|testhelper|testutil|testfactory|seealldata)$',
+    re.IGNORECASE
+)
+
 def is_test_class(name):
-    lower = name.lower()
-    return lower.endswith("test") or lower.endswith("tests") or lower.endswith("_test")
+    return bool(TEST_NAME_PATTERNS.search(name))
 
 def has_istest_annotation(name):
     cls_path = os.path.join(build_sources, "force-app", "main", "default", "classes", f"{name}.cls")
@@ -479,7 +488,7 @@ def has_istest_annotation(name):
         return False
     try:
         with open(cls_path, "r", encoding="utf-8", errors="ignore") as fh:
-            return bool(re.search(r'@isTest', fh.read(2000), re.IGNORECASE))
+            return bool(re.search(r'@isTest', fh.read(), re.IGNORECASE))
     except OSError:
         return False
 
@@ -487,11 +496,33 @@ all_apex   = members_by_type.get("ApexClass", set())
 test_classes = sorted(c for c in all_apex if is_test_class(c) or has_istest_annotation(c))
 main_classes = sorted(c for c in all_apex if c not in test_classes)
 
+# For each main class in delta, find ALL test classes in repo that reference it
+classes_dir = os.path.join(build_sources, "force-app", "main", "default", "classes")
+additional_tests = set()
+if os.path.isdir(classes_dir) and main_classes:
+    for fname in os.listdir(classes_dir):
+        if not fname.endswith(".cls"):
+            continue
+        candidate = fname[:-4]
+        if candidate in test_classes:
+            continue
+        if not (is_test_class(candidate) or has_istest_annotation(candidate)):
+            continue
+        try:
+            with open(os.path.join(classes_dir, fname), "r", encoding="utf-8", errors="ignore") as fh:
+                content = fh.read()
+            if any(mc in content for mc in main_classes):
+                additional_tests.add(candidate)
+        except OSError:
+            pass
+
+all_test_classes = sorted(set(test_classes) | additional_tests)
+
 tc_path = os.path.join(build_sources, "manifest", f"{branch}_TestClass.txt")
-if test_classes:
+if all_test_classes:
     with open(tc_path, "w") as fh:
-        fh.write("\n".join(test_classes) + "\n")
-    print(f"TestClass.txt -> {tc_path} | {test_classes}")
+        fh.write("\n".join(all_test_classes) + "\n")
+    print(f"TestClass.txt -> {tc_path} | {all_test_classes}")
 else:
     print("No test classes in delta – TestClass.txt skipped")
 
