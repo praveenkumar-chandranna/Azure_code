@@ -195,6 +195,8 @@ jobs:
           echo "#BUILD_ID=$(Build.BuildId)" > /tmp/changed_files.txt
           echo "$CHANGED" >> /tmp/changed_files.txt
           echo "##vso[task.setvariable variable=HAS_CHANGES]true"
+          echo "##vso[task.setvariable variable=DIFF_FROM]$MERGE_BASE"
+          echo "##vso[task.setvariable variable=DIFF_TO]$PR_SOURCE_COMMIT"
         displayName: "Compute Delta Changed Files"
         env:
           PR_SOURCE_COMMIT: $(System.PullRequest.SourceCommitId)
@@ -220,6 +222,8 @@ jobs:
           FEATURE_BRANCH: $(SOURCE_BRANCH)
           BUILD_SOURCES:  $(Build.SourcesDirectory)
           API_VERSION:    "67.0"
+          DIFF_FROM:      $(DIFF_FROM)
+          DIFF_TO:        $(DIFF_TO)
 
       - script: |
           HAS_MAIN=$([ -f "$(MC_PATH)" ] && [ -s "$(MC_PATH)" ] && echo "true" || echo "false")

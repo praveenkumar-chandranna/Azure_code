@@ -428,9 +428,33 @@ for f in changed_files:
         add("ContentAsset", strip_suffix(filename))
         continue
 
-    # labels — always single member
+    # labels — extract only changed <fullName> values from git diff
     if folder == "labels":
-        add("CustomLabels", "CustomLabels")
+        diff_from = os.environ.get("DIFF_FROM", "")
+        diff_to   = os.environ.get("DIFF_TO", "")
+        changed_label_names = set()
+        if diff_from and diff_to:
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["git", "diff", diff_from, diff_to, "--",
+                     f"force-app/main/default/labels/{filename}"],
+                    capture_output=True, text=True, cwd=build_sources
+                )
+                for line in result.stdout.splitlines():
+                    if line.startswith("+") and not line.startswith("+++"):
+                        m = re.search(r'<fullName>([^<]+)</fullName>', line)
+                        if m:
+                            changed_label_names.add(m.group(1).strip())
+            except Exception as e:
+                print(f"WARNING: git diff for labels failed: {e}")
+        if changed_label_names:
+            for lname in changed_label_names:
+                add("CustomLabel", lname)
+            print(f"CustomLabel delta: {sorted(changed_label_names)}")
+        else:
+            print("WARNING: No changed label names found - using CustomLabels fallback")
+            add("CustomLabels", "CustomLabels")
         continue
 
     # settings — member = filename without suffix
