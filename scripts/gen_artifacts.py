@@ -48,6 +48,7 @@ TYPE_MAP = {
     "duplicateRules":                     "DuplicateRule",
     "matchingRules":                      "MatchingRule",
     "sharingRules":                       "SharingRules",
+    "sharingSets":                        "SharingSet",
     "assignmentRules":                    "AssignmentRules",
     "autoResponseRules":                  "AutoResponseRules",
     "escalationRules":                    "EscalationRules",
@@ -309,7 +310,7 @@ def strip_suffix(name):
         r'|userAccessPolicy|useraccesspolicy|mutingPermissionSet|restrictionRule'
         r'|approvalProcess|assignmentRules|autoResponseRules|escalationRules'
         r'|matchingRule|sharingRules|sharingCriteriaRule|sharingOwnerRule'
-        r'|sharingGuestRule|sharingTerritoryRule|duplicateRule|pathAssistant|quickAction'
+        r'|sharingGuestRule|sharingTerritoryRule|duplicateRule|pathAssistant|quickAction|sharingSet'
         r'|workflow|workflowAlert|workflowFieldUpdate|workflowFlowAction'
         r'|workflowKnowledgePublish|workflowOutboundMessage|workflowRule|workflowSend|workflowTask'
         r'|object|tab|customMetadata|namedCredential|connectedApp'
