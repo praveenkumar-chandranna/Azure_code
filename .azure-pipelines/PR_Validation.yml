@@ -380,12 +380,17 @@ jobs:
           echo "Code analysis passed - all violation counts within thresholds."
         displayName: "Enforce Severity Thresholds (Fail on 1-3, Warn on 4-5)"
 
+      - script: |
+          IST_TS=$(TZ='Asia/Kolkata' date +'%d%m%Y_%H%M%S')
+          echo "##vso[task.setvariable variable=SCAN_TS]$IST_TS"
+        displayName: "Set Artifact Timestamp"
+
       - task: PublishPipelineArtifact@1
         displayName: "Publish Code Analyzer Results"
         condition: always()
         inputs:
           targetPath: "$(Build.SourcesDirectory)/scanner-results.html"
-          artifact: "code-analyzer-results"
+          artifact: "code-analyzer-results_$(SCAN_TS)"
 
       # ── Validate delta package against target org ───────────────────────────
       - script: |
