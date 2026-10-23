@@ -25,15 +25,16 @@ jobs:
           DEST_BRANCH="${DEST_BRANCH##refs/heads/}"
           echo "PR: $SOURCE_BRANCH -> $DEST_BRANCH"
 
-          # Enforce valid pairs only: Dev->QA, QA->UAT, UAT->master
+          # Enforce valid pairs only: feature/*->Dev, Dev->QA, QA->UAT, UAT->master
           VALID="false"
+          if [[ "$SOURCE_BRANCH" == feature/* && "$DEST_BRANCH" == "Dev"    ]]; then VALID="true"; fi
           if [[ "$SOURCE_BRANCH" == "Dev"  && "$DEST_BRANCH" == "QA"     ]]; then VALID="true"; fi
           if [[ "$SOURCE_BRANCH" == "QA"   && "$DEST_BRANCH" == "UAT"    ]]; then VALID="true"; fi
           if [[ "$SOURCE_BRANCH" == "UAT"  && "$DEST_BRANCH" == "master" ]]; then VALID="true"; fi
 
           if [[ "$VALID" == "false" ]]; then
             echo "ERROR: Invalid PR branch pair '$SOURCE_BRANCH -> $DEST_BRANCH'"
-            echo "Allowed pairs: Dev->QA | QA->UAT | UAT->master"
+            echo "Allowed pairs: feature/*->Dev | Dev->QA | QA->UAT | UAT->master"
             echo "##vso[task.setvariable variable=should_validate;isOutput=true]false"
             echo "##vso[task.setvariable variable=invalid_pair;isOutput=true]true"
           else
@@ -53,7 +54,7 @@ jobs:
           echo "=============================================="
           echo "WARNING: PR raised from an invalid branch pair"
           echo "PRs cannot be raised from this branch combination"
-          echo "Allowed: Dev->QA | QA->UAT | UAT->master"
+          echo "Allowed: feature/*->Dev | Dev->QA | QA->UAT | UAT->master"
           echo "Please close this PR and raise from the correct branch"
           echo "=============================================="
         displayName: "Notify - Invalid Branch Pair "
