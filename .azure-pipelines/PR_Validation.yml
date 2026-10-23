@@ -208,9 +208,10 @@ jobs:
             echo "ERROR: gen_artifacts.py failed - no metadata found in delta"
             exit 1
           fi
-          PACKAGE_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_package.xml"
-          TC_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_TestClass.txt"
-          MC_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_MainClass.txt"
+          SAFE_BRANCH="${SOURCE_BRANCH//\//_}"
+          PACKAGE_PATH="$(Build.SourcesDirectory)/manifest/${SAFE_BRANCH}_package.xml"
+          TC_PATH="$(Build.SourcesDirectory)/manifest/${SAFE_BRANCH}_TestClass.txt"
+          MC_PATH="$(Build.SourcesDirectory)/manifest/${SAFE_BRANCH}_MainClass.txt"
           if [[ ! -f "$PACKAGE_PATH" ]]; then
             echo "ERROR: package.xml not generated at $PACKAGE_PATH"
             exit 1

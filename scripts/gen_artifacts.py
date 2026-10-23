@@ -13,7 +13,7 @@ import os, sys, re
 from xml.etree import ElementTree as ET
 
 build_sources = os.environ["BUILD_SOURCES"]
-branch        = os.environ["FEATURE_BRANCH"]
+branch        = os.environ["FEATURE_BRANCH"].replace("/", "_")
 api_version   = os.environ.get("API_VERSION", "67.0")
 
 with open("/tmp/changed_files.txt") as f:
