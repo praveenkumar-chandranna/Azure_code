@@ -124,8 +124,8 @@ jobs:
           git fetch --tags
           rm -f /tmp/changed_files.txt
 
-          # Last successful deployment tag for this environment
-          LAST_SUCCESS_TAG=$(git tag -l "DEPLOYED_$(ENVIRONMENT)_*" | sort -V | tail -1)
+          # Last successful deployment tag for this environment (sorted by tag creation date)
+          LAST_SUCCESS_TAG=$(git tag -l "DEPLOYED_$(ENVIRONMENT)_*" --sort=-creatordate | head -1)
 
           if [[ -n "$LAST_SUCCESS_TAG" ]]; then
             LAST_SUCCESS_COMMIT=$(git rev-parse "$LAST_SUCCESS_TAG")
@@ -425,7 +425,7 @@ jobs:
           git config user.email "$(GIT_USER_EMAIL)"
           git config user.name  "$(GIT_USER_NAME)"
           git fetch --tags
-          PREV_TAG=$(git tag -l "DEPLOYED_$(ENVIRONMENT)_*" | sort -V | tail -1)
+          PREV_TAG=$(git tag -l "DEPLOYED_$(ENVIRONMENT)_*" --sort=-creatordate | head -1)
           if [[ -n "$PREV_TAG" ]]; then
             git tag -d "$PREV_TAG" 2>/dev/null || true
             git push origin ":refs/tags/$PREV_TAG" 2>/dev/null || true
