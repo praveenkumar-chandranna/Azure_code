@@ -339,9 +339,9 @@ def strip_suffix(name):
         r'|genAiPromptTemplate|genAiPlugin|genAiFunction|genAiPlanner'
         r'|waveApplication|waveDashboard|waveDataflow|waveDataset|waveLens|waveRecipe|waveXmd'
         r'|webStore|webStoreTemplate|slackApp|enablementProgram'
-        r'|settings|site|md|resource|asset|cls|trigger|page|component'
+        r'|settings|site|md|resource|asset|cls|trigger|page|component|app'
         r')-meta\.xml$'
-        r'|-meta\.xml$|\.xml$|\.cls$|\.trigger$|\.page$|\.component$|\.resource$|\.asset$',
+        r'|-meta\.xml$|\.xml$|\.cls$|\.trigger$|\.page$|\.component$|\.resource$|\.asset$|\.app$',
         '', name
     )
 
