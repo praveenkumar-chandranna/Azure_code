@@ -131,7 +131,7 @@ jobs:
             LAST_SUCCESS_COMMIT=$(git rev-parse "$LAST_SUCCESS_TAG")
             echo "Last successful deployment tag : $LAST_SUCCESS_TAG"
             echo "Last successful deployment SHA : $LAST_SUCCESS_COMMIT"
-            CHANGED=$(git diff --name-only "$LAST_SUCCESS_COMMIT" origin/$(TARGET_BRANCH) -- force-app/)
+            CHANGED=$(git diff --name-only --diff-filter=ACMR "$LAST_SUCCESS_COMMIT" origin/$(TARGET_BRANCH) -- force-app/)
             DIFF_FROM="$LAST_SUCCESS_COMMIT"
             DIFF_TO="origin/$(TARGET_BRANCH)"
           else
@@ -147,7 +147,7 @@ jobs:
               exit 1
             fi
             echo "Last merge commit: $MERGE_COMMIT"
-            CHANGED=$(git diff --name-only "${MERGE_COMMIT}^1" "${MERGE_COMMIT}" -- force-app/)
+            CHANGED=$(git diff --name-only --diff-filter=ACMR "${MERGE_COMMIT}^1" "${MERGE_COMMIT}" -- force-app/)
             DIFF_FROM="${MERGE_COMMIT}^1"
             DIFF_TO="${MERGE_COMMIT}"
           fi

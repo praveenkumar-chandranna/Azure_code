@@ -178,7 +178,7 @@ jobs:
           echo "Merge base: $MERGE_BASE"
           echo "Diff range: $MERGE_BASE..$PR_SOURCE_COMMIT"
 
-          ALL_CHANGED=$(git diff --name-only --diff-filter=ACM "$MERGE_BASE" "$PR_SOURCE_COMMIT")
+          ALL_CHANGED=$(git diff --name-only --diff-filter=ACMR "$MERGE_BASE" "$PR_SOURCE_COMMIT")
           if [[ -z "$ALL_CHANGED" ]]; then
             echo "ERROR: No difference found - branches are identical, nothing to validate"
             exit 1
