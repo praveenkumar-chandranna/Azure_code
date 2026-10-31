@@ -178,7 +178,7 @@ jobs:
           echo "Merge base: $MERGE_BASE"
           echo "Diff range: $MERGE_BASE..$PR_SOURCE_COMMIT"
 
-          ALL_CHANGED=$(git diff --name-only "$MERGE_BASE" "$PR_SOURCE_COMMIT")
+          ALL_CHANGED=$(git diff --name-only --diff-filter=ACM "$MERGE_BASE" "$PR_SOURCE_COMMIT")
           if [[ -z "$ALL_CHANGED" ]]; then
             echo "ERROR: No difference found - branches are identical, nothing to validate"
             exit 1
@@ -232,7 +232,12 @@ jobs:
           HAS_TEST=$([ -f "$(TC_PATH)" ] && [ -s "$(TC_PATH)" ] && echo "true" || echo "false")
           HAS_APEX=$(grep -cE '<name>(ApexClass|ApexTrigger)</name>' "$(PACKAGE_PATH)" 2>/dev/null; true)
 
-          if [[ "$HAS_APEX" -eq 0 ]]; then
+          if [[ "$(DEST_BRANCH)" == "Dev" ]]; then
+            echo "Target is Dev - bypassing test run (NoTestRun)"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]"
+
+          elif [[ "$HAS_APEX" -eq 0 ]]; then
             # No Apex in delta - NoTestRun for all environments
             echo "No Apex in delta - setting NoTestRun"
             echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
