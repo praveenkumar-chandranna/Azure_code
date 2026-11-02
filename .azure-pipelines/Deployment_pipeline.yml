@@ -223,14 +223,26 @@ jobs:
               echo "Found test classes: $FOUND_TESTS - RunSpecifiedTests"
               echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
               echo "##vso[task.setvariable variable=TEST_CLASSES]$FOUND_TESTS"
-            else
-              echo "No test class found in repo - falling back to RunLocalTests"
+            elif [[ "$(ENVIRONMENT)" == "PROD" ]]; then
+              echo "No test class found in repo - PROD falling back to RunLocalTests"
               echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
               echo "##vso[task.setvariable variable=TEST_CLASSES]"
+            else
+              echo "ERROR: Main class exists in delta but no test class found in repo."
+              echo "Please create a test class for the main class before deploying."
+              exit 1
             fi
 
+          elif [[ "$HAS_MAIN" == "false" && "$HAS_TEST" == "true" ]]; then
+            # Only test class in delta - run that test class directly
+            TEST_CLASSES=$(paste -sd ' ' "$(TC_PATH)")
+            echo "Only test class in delta - RunSpecifiedTests: $TEST_CLASSES"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+
           else
-            echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+            echo "No main or test class in delta - setting NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
             echo "##vso[task.setvariable variable=TEST_CLASSES]"
           fi
         displayName: "Resolve Test Classes from Delta"
