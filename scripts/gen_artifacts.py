@@ -452,23 +452,23 @@ for f in changed_files:
                 # Parse diff into <labels>...</labels> blocks, flag blocks with any +/- line
                 current_block = []
                 current_full_name = None
-                block_changed = False
+                block_has_addition = False
                 for line in result.stdout.splitlines():
                     stripped = line[1:] if line and line[0] in ('+', '-', ' ') else line
                     if '<labels>' in stripped:
                         current_block = []
                         current_full_name = None
-                        block_changed = False
-                    if line and line[0] in ('+', '-') and not line.startswith('+++') and not line.startswith('---'):
-                        block_changed = True
+                        block_has_addition = False
+                    if line and line[0] == '+' and not line.startswith('+++'):
+                        block_has_addition = True
                     fn_match = re.search(r'<fullName>([^<]+)</fullName>', stripped)
                     if fn_match:
                         current_full_name = fn_match.group(1).strip()
                     if '</labels>' in stripped:
-                        if block_changed and current_full_name:
+                        if block_has_addition and current_full_name:
                             changed_label_names.add(current_full_name)
                         current_full_name = None
-                        block_changed = False
+                        block_has_addition = False
                 # If diff was empty (new file not yet tracked from DIFF_FROM),
                 # fall back to parsing the file directly — all labels are new
                 if not changed_label_names and not result.stdout.strip():
