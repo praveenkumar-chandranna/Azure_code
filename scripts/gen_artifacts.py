@@ -299,7 +299,7 @@ SUB_TYPE_MAP = {
     "indexes":           "Index",
     "sharingReasons":    "SharingReason",
 }
-BUNDLE_TYPES = {"lwc", "aura", "experiences", "networks", "communities"}
+BUNDLE_TYPES = {"lwc", "aura", "experiences", "communities"}
 
 def strip_suffix(name):
     return re.sub(
@@ -318,7 +318,7 @@ def strip_suffix(name):
         r'|externalCredential|certificate|globalValueSet|standardValueSet'
         r'|globalValueSetTranslation|standardValueSetTranslation|translation|objectTranslation'
         r'|reportType|report|dashboard|emailTemplate|document|letterhead'
-        r'|lightningMessageChannel|experienceBundle|network|networkBranding'
+        r'|lightningMessageChannel|experienceBundle|network|networkBranding|managedTopics'
         r'|managedTopic|customSite|community|notiftype|notificationTypeConfig|customNotificationType'
         r'|callCenter|serviceChannel|servicePresenceStatus|presenceDeclineReason'
         r'|presenceUserConfig|routingConfiguration|queueRoutingConfig'
