@@ -153,7 +153,7 @@ TYPE_MAP = {
     "experiences":                        "ExperienceBundle",
     "networks":                           "Network",
     "networkBranding":                    "NetworkBranding",
-    "managedTopics":                      "ManagedTopic",
+    "managedTopics":                      "ManagedTopics",
     "sites":                              "CustomSite",
     "communities":                        "Community",
     "customHelpMenuSections":             "CustomHelpMenuSection",
@@ -299,7 +299,7 @@ SUB_TYPE_MAP = {
     "indexes":           "Index",
     "sharingReasons":    "SharingReason",
 }
-BUNDLE_TYPES = {"lwc", "aura", "experiences", "communities"}
+BUNDLE_TYPES = {"lwc", "aura", "communities"}
 
 def strip_suffix(name):
     return re.sub(
@@ -341,7 +341,7 @@ def strip_suffix(name):
         r'|webStore|webStoreTemplate|slackApp|enablementProgram'
         r'|settings|site|md|resource|asset|cls|trigger|page|component|app'
         r')-meta\.xml$'
-        r'|-meta\.xml$|\.xml$|\.cls$|\.trigger$|\.page$|\.component$|\.resource$|\.asset$|\.app$',
+        r'|-meta\.xml$|\.xml$|\.cls$|\.trigger$|\.page$|\.component$|\.resource$|\.asset$|\.app$|\.networkBranding$',
         '', name
     )
 
@@ -404,6 +404,12 @@ for f in changed_files:
                 add("Territory2", f"{model_name}.{member_name}")
             elif sub == "territory2Rules":
                 add("Territory2Rule", f"{model_name}.{member_name}")
+        continue
+
+    # experiences — member = bundle folder name (ignore top-level .site-meta.xml file)
+    if folder == "experiences":
+        if len(parts) >= 3 or not parts[1].endswith("-meta.xml"):
+            add("ExperienceBundle", parts[1].replace(".site-meta.xml", "") if parts[1].endswith(".site-meta.xml") else parts[1])
         continue
 
     # Bundle types — member = bundle folder name
