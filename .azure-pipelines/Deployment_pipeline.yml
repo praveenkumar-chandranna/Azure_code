@@ -29,7 +29,7 @@ jobs:
       - script: |
           ENVIRONMENT="${{ parameters.environment }}"
           SOURCE_BRANCH="${{ parameters.Feature_Branch }}"
-          VALIDATION_JOB_ID="${{ parameters.Validation_Job_Id }}"
+          VALIDATION_JOB_ID=$(echo "${{ parameters.Validation_Job_Id }}" | xargs)
 
           case "$ENVIRONMENT" in
             QA)
