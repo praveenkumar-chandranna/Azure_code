@@ -407,10 +407,9 @@ for f in changed_files:
                 add("Territory2Rule", f"{model_name}.{member_name}")
         continue
 
-    # experiences — member = bundle folder name (ignore top-level .site-meta.xml file)
+    # experiences — member = bundle folder name
     if folder == "experiences":
-        if len(parts) >= 3 or not parts[1].endswith("-meta.xml"):
-            add("ExperienceBundle", parts[1].replace(".site-meta.xml", "") if parts[1].endswith(".site-meta.xml") else parts[1])
+        add("ExperienceBundle", parts[1].replace(".site-meta.xml", "") if parts[1].endswith(".site-meta.xml") else parts[1])
         continue
 
     # Bundle types — member = bundle folder name
