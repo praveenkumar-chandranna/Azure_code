@@ -155,6 +155,7 @@ TYPE_MAP = {
     "networkBranding":                    "NetworkBranding",
     "managedTopics":                      "ManagedTopics",
     "sites":                              "CustomSite",
+    "siteDotComSites":                    "SiteDotCom",
     "communities":                        "Community",
     "customHelpMenuSections":             "CustomHelpMenuSection",
     "navigationMenus":                    "NavigationMenu",
@@ -314,7 +315,7 @@ def strip_suffix(name):
         r'|workflow|workflowAlert|workflowFieldUpdate|workflowFlowAction'
         r'|workflowKnowledgePublish|workflowOutboundMessage|workflowRule|workflowSend|workflowTask'
         r'|object|tab|customMetadata|namedCredential|connectedApp'
-        r'|authprovider|remoteSiteSetting|cspTrustedSite|corsWhitelistOrigin'
+        r'|authprovider|remoteSiteSetting|remoteSite|cspTrustedSite|corsWhitelistOrigin'
         r'|externalCredential|certificate|globalValueSet|standardValueSet'
         r'|globalValueSetTranslation|standardValueSetTranslation|translation|objectTranslation'
         r'|reportType|report|dashboard|emailTemplate|document|letterhead'
@@ -339,9 +340,9 @@ def strip_suffix(name):
         r'|genAiPromptTemplate|genAiPlugin|genAiFunction|genAiPlanner'
         r'|waveApplication|waveDashboard|waveDataflow|waveDataset|waveLens|waveRecipe|waveXmd'
         r'|webStore|webStoreTemplate|slackApp|enablementProgram'
-        r'|settings|site|md|resource|asset|cls|trigger|page|component|app'
+        r'|settings|site|documentGenerationSetting|md|resource|asset|cls|trigger|page|component|app'
         r')-meta\.xml$'
-        r'|-meta\.xml$|\.xml$|\.cls$|\.trigger$|\.page$|\.component$|\.resource$|\.asset$|\.app$|\.networkBranding$',
+        r'|-meta\.xml$|\.xml$|\.cls$|\.trigger$|\.page$|\.component$|\.resource$|\.asset$|\.app$|\.networkBranding$|\.site$',
         '', name
     )
 
