@@ -14,8 +14,8 @@ parameters:
       - PROD
   - name: Validation_Job_Id
     type: string
-    displayName: "Salesforce Validation Job ID for Quick Deploy (leave blank for full delta deploy)"
-    default: ""
+    displayName: "Salesforce Validation Job ID for Quick Deploy (enter 'none' for full delta deploy)"
+    default: "none"
 variables:
   - group: RCPL-Salesforce-Secrets
 
@@ -61,7 +61,7 @@ jobs:
           echo "##vso[task.setvariable variable=TARGET_BRANCH]$TARGET_BRANCH"
           echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
 
-          if [[ -n "$VALIDATION_JOB_ID" ]]; then
+          if [[ -n "$VALIDATION_JOB_ID" && "$VALIDATION_JOB_ID" != "none" ]]; then
             echo "Quick Deploy mode - Validation Job ID: $VALIDATION_JOB_ID"
             echo "##vso[task.setvariable variable=QUICK_DEPLOY]true"
           else
@@ -148,7 +148,7 @@ jobs:
           [[ "$DEPLOY_EXIT" != "0" ]] && { echo "QUICK DEPLOY FAILED"; exit 1; }
           echo "QUICK DEPLOY SUCCEEDED"
         displayName: "Quick Deploy via Validation Job ID"
-        condition: eq(variables['QUICK_DEPLOY'], 'true')
+        condition: ne('${{ parameters.Validation_Job_Id }}', 'none')
 
       # ── Tag successful quick deployment ─────────────────────────────────────
       - script: |
@@ -165,15 +165,14 @@ jobs:
           git push origin "$TAG_NAME"
           echo "Deployment tag created: $TAG_NAME"
         displayName: "Tag Successful Quick Deployment"
-        condition: and(succeeded(), eq(variables['QUICK_DEPLOY'], 'true'))
+        condition: and(succeeded(), ne('${{ parameters.Validation_Job_Id }}', 'none'))
 
       - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
         displayName: "JWT Key Cleanup (Quick Deploy)"
-        condition: and(always(), eq(variables['QUICK_DEPLOY'], 'true'))
+        condition: and(always(), ne('${{ parameters.Validation_Job_Id }}', 'none'))
 
       # ── Delta package generation from git diff ──────────────────────────────
       - script: |
-          [[ "$(QUICK_DEPLOY)" == "true" ]] && { echo "Skipping - Quick Deploy mode"; exit 0; }
           git fetch origin $(SOURCE_BRANCH):refs/remotes/origin/$(SOURCE_BRANCH)
           git fetch origin $(TARGET_BRANCH):refs/remotes/origin/$(TARGET_BRANCH)
           git fetch --tags
@@ -218,10 +217,9 @@ jobs:
           echo "##vso[task.setvariable variable=DIFF_FROM]$DIFF_FROM"
           echo "##vso[task.setvariable variable=DIFF_TO]$DIFF_TO"
         displayName: "Compute Delta Changed Files"
-        condition: eq(variables['QUICK_DEPLOY'], 'false')
+        condition: eq('${{ parameters.Validation_Job_Id }}', 'none')
 
       - script: |
-          [[ "$(QUICK_DEPLOY)" == "true" ]] && { echo "Skipping - Quick Deploy mode"; exit 0; }
           python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
           if [[ $? -ne 0 ]]; then
             echo "ERROR: gen_artifacts.py failed - no metadata found in delta"
@@ -238,7 +236,7 @@ jobs:
           echo "##vso[task.setvariable variable=TC_PATH]$TC_PATH"
           echo "##vso[task.setvariable variable=MC_PATH]$MC_PATH"
         displayName: "Generate Delta package.xml & TestClass.txt"
-        condition: eq(variables['QUICK_DEPLOY'], 'false')
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
         env:
           FEATURE_BRANCH: $(SOURCE_BRANCH)
           BUILD_SOURCES:  $(Build.SourcesDirectory)
@@ -304,7 +302,7 @@ jobs:
             echo "##vso[task.setvariable variable=TEST_CLASSES]"
           fi
         displayName: "Resolve Test Classes from Delta"
-        condition: eq(variables['QUICK_DEPLOY'], 'false')
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
 
       - script: |
           echo "=========================================="
@@ -315,12 +313,12 @@ jobs:
           echo "package.xml contents:"
           cat "$(MANIFEST_PATH)"
         displayName: "Display package.xml & Deployment Configuration"
-        condition: eq(variables['QUICK_DEPLOY'], 'false')
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
 
       - script: |
           sf plugins install @salesforce/plugin-code-analyzer@latest
         displayName: "Install Salesforce Code Analyzer Plugin"
-        condition: eq(variables['QUICK_DEPLOY'], 'false')
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
 
       - script: |
           sf code-analyzer run \
@@ -328,7 +326,7 @@ jobs:
             --output-file "$(Build.SourcesDirectory)/scanner-results.json" \
             --output-file "$(Build.SourcesDirectory)/scanner-results.html" || true
         displayName: "Run Salesforce Code Analyzer (Full Scan)"
-        condition: eq(variables['QUICK_DEPLOY'], 'false')
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
 
       - script: |
           if [[ ! -f "$(Build.SourcesDirectory)/scanner-results.json" ]]; then
@@ -416,17 +414,17 @@ jobs:
           fi
           echo "Code analysis passed - all violation counts within thresholds."
         displayName: "Enforce Severity Thresholds (Fail on 1-3, Warn on 4-5)"
-        condition: eq(variables['QUICK_DEPLOY'], 'false')
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
 
       - script: |
           IST_TS=$(TZ='Asia/Kolkata' date +'%d%m%Y_%H%M%S')
           echo "##vso[task.setvariable variable=SCAN_TS]$IST_TS"
         displayName: "Set Artifact Timestamp"
-        condition: eq(variables['QUICK_DEPLOY'], 'false')
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
 
       - task: PublishPipelineArtifact@1
         displayName: "Publish Code Analyzer Results"
-        condition: and(always(), eq(variables['QUICK_DEPLOY'], 'false'))
+        condition: and(always(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
         inputs:
           targetPath: "$(Build.SourcesDirectory)/scanner-results.html"
           artifact: "code-analyzer-results_$(SCAN_TS)"
@@ -495,7 +493,7 @@ jobs:
           [[ "$DEPLOY_EXIT" != "0" ]] && { echo "DEPLOYMENT FAILED"; exit 1; }
           echo "DEPLOYMENT SUCCEEDED"
         displayName: "Deploy Delta to Salesforce Org"
-        condition: eq(variables['QUICK_DEPLOY'], 'false')
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
 
       # ── Tag successful deployment immediately after deploy ─────────────────
       - script: |
@@ -512,7 +510,7 @@ jobs:
           git push origin "$TAG_NAME"
           echo "Deployment tag created: $TAG_NAME"
         displayName: "Tag Successful Deployment"
-        condition: and(succeeded(), eq(variables['QUICK_DEPLOY'], 'false'))
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
 
       # ── Coverage check post-deployment ───────────────────────────────────
       - script: |
@@ -530,7 +528,7 @@ jobs:
             --results-dir "$(Build.SourcesDirectory)/test-results" \
             --classes "$APEX_CLASSES"
         displayName: "Check 85% Per-Class Coverage (Post-Deployment)"
-        condition: and(succeeded(), eq(variables['QUICK_DEPLOY'], 'false'), ne(variables['TEST_LEVEL'], 'NoTestRun'))
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'), ne(variables['TEST_LEVEL'], 'NoTestRun'))
 
       - script: |
           DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
@@ -549,7 +547,7 @@ jobs:
           git push origin "$TAG_NAME"
           echo "Tag created: $TAG_NAME"
         displayName: "Create PROD Deployment Tag"
-        condition: and(succeeded(), eq(variables['QUICK_DEPLOY'], 'false'), eq('${{ parameters.environment }}', 'PROD'))
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'), eq('${{ parameters.environment }}', 'PROD'))
 
       - script: |
           DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
@@ -568,8 +566,8 @@ jobs:
           git push origin "$TAG_NAME"
           echo "Tag created: $TAG_NAME"
         displayName: "Create PROD Deployment Tag (Quick Deploy)"
-        condition: and(succeeded(), eq(variables['QUICK_DEPLOY'], 'true'), eq('${{ parameters.environment }}', 'PROD'))
+        condition: and(succeeded(), ne('${{ parameters.Validation_Job_Id }}', 'none'), eq('${{ parameters.environment }}', 'PROD'))
 
       - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
         displayName: "JWT Key Cleanup"
-        condition: and(always(), eq(variables['QUICK_DEPLOY'], 'false'))
+        condition: and(always(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
