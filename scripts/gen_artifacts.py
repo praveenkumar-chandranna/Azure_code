@@ -77,6 +77,7 @@ TYPE_MAP = {
     "externalCredentials":                "ExternalCredential",
     "certificates":                       "Certificate",
     "mutingPermissionSets":               "MutingPermissionSet",
+    "mutingpermissionsets":               "MutingPermissionSet",
     "restrictionRules":                   "RestrictionRule",
     "sharingCriteriaRules":               "SharingCriteriaRule",
     "sharingOwnerRules":                  "SharingOwnerRule",
@@ -308,7 +309,7 @@ def strip_suffix(name):
         r'|fieldSet|businessProcess|sharingReason|index'
         r'|layout|flexipage|flow|flowDefinition|flowCategory'
         r'|permissionset|permissionsetgroup|permissionSetLicenseDefinition|profile'
-        r'|userAccessPolicy|useraccesspolicy|mutingPermissionSet|restrictionRule'
+        r'|userAccessPolicy|useraccesspolicy|mutingPermissionSet|mutingpermissionset|restrictionRule'
         r'|approvalProcess|assignmentRules|autoResponseRules|escalationRules'
         r'|matchingRule|sharingRules|sharingCriteriaRule|sharingOwnerRule'
         r'|sharingGuestRule|sharingTerritoryRule|duplicateRule|pathAssistant|quickAction|sharingSet'
