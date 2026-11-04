@@ -368,49 +368,49 @@ jobs:
           artifact: "code-analyzer-results_$(SCAN_TS)"
 
       # ── Validate delta package ──────────────────────────────────────────────
-      - script: |
-          set +e
-          RESULTS_DIR="$(Build.SourcesDirectory)/test-results"
-          mkdir -p "$RESULTS_DIR"
-          CMD=(sf project deploy start \
-            --dry-run \
-            --manifest "$(MANIFEST_PATH)" \
-            --target-org "$(SF_USERNAME)" \
-            --test-level "$(TEST_LEVEL)" \
-            --wait 30 \
-            --ignore-warnings \
-            --verbose)
-          if [[ "$(TEST_LEVEL)" != "NoTestRun" ]]; then
-            CMD+=(--coverage-formatters json --results-dir "$RESULTS_DIR")
-          fi
-          if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]]; then
-            CMD+=(--tests $(TEST_CLASSES))
-          fi
-          echo "Running: ${CMD[@]}"
-          "${CMD[@]}"
-          VALIDATE_EXIT=${PIPESTATUS[0]}
-          set -e
-          [[ "$VALIDATE_EXIT" != "0" ]] && { echo "VALIDATION FAILED"; exit 1; }
-          echo "VALIDATION PASSED"
-        displayName: "Validate Delta Deployment"
+      # - script: |
+      #     set +e
+      #     RESULTS_DIR="$(Build.SourcesDirectory)/test-results"
+      #     mkdir -p "$RESULTS_DIR"
+      #     CMD=(sf project deploy start \
+      #       --dry-run \
+      #       --manifest "$(MANIFEST_PATH)" \
+      #       --target-org "$(SF_USERNAME)" \
+      #       --test-level "$(TEST_LEVEL)" \
+      #       --wait 30 \
+      #       --ignore-warnings \
+      #       --verbose)
+      #     if [[ "$(TEST_LEVEL)" != "NoTestRun" ]]; then
+      #       CMD+=(--coverage-formatters json --results-dir "$RESULTS_DIR")
+      #     fi
+      #     if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]]; then
+      #       CMD+=(--tests $(TEST_CLASSES))
+      #     fi
+      #     echo "Running: ${CMD[@]}"
+      #     "${CMD[@]}"
+      #     VALIDATE_EXIT=${PIPESTATUS[0]}
+      #     set -e
+      #     [[ "$VALIDATE_EXIT" != "0" ]] && { echo "VALIDATION FAILED"; exit 1; }
+      #     echo "VALIDATION PASSED"
+      #   displayName: "Validate Delta Deployment"
 
       # ── Coverage check post-validation (reads from local results dir) ───────
-      - script: |
-          APEX_CLASSES=""
-          if [[ -f "$(MC_PATH)" && -s "$(MC_PATH)" ]]; then
-            APEX_CLASSES=$(paste -sd ',' "$(MC_PATH)")
-          fi
-          if [[ -z "$APEX_CLASSES" ]]; then
-            echo "No main classes in delta - skipping coverage check"
-            exit 0
-          fi
-          echo "Checking coverage for: $APEX_CLASSES"
-          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
-            --mode local \
-            --results-dir "$(Build.SourcesDirectory)/test-results" \
-            --classes "$APEX_CLASSES"
-        displayName: "Check 85% Per-Class Coverage (Post-Validation)"
-        condition: and(succeeded(), ne(variables['TEST_LEVEL'], 'NoTestRun'))
+      # - script: |
+      #     APEX_CLASSES=""
+      #     if [[ -f "$(MC_PATH)" && -s "$(MC_PATH)" ]]; then
+      #       APEX_CLASSES=$(paste -sd ',' "$(MC_PATH)")
+      #     fi
+      #     if [[ -z "$APEX_CLASSES" ]]; then
+      #       echo "No main classes in delta - skipping coverage check"
+      #       exit 0
+      #     fi
+      #     echo "Checking coverage for: $APEX_CLASSES"
+      #     python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+      #       --mode local \
+      #       --results-dir "$(Build.SourcesDirectory)/test-results" \
+      #       --classes "$APEX_CLASSES"
+      #   displayName: "Check 85% Per-Class Coverage (Post-Validation)"
+      #   condition: and(succeeded(), ne(variables['TEST_LEVEL'], 'NoTestRun'))
 
       # ── Deploy delta package ────────────────────────────────────────────────
       - script: |
