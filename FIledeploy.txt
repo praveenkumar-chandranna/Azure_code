@@ -594,4 +594,4 @@ force-app/main/default/triggers/DistributorCategoryTrigger.trigger
 force-app/main/default/triggers/DistributorCategoryTrigger.trigger-meta.xml
 force-app/main/default/triggers/StaplePriceTrigger.trigger
 force-app/main/default/triggers/StaplePriceTrigger.trigger-meta.xml
-force-app/main/default/triggers/TripTrigger.trigger
+force-app/main/default/triggers/TripTrigger.trigger 
