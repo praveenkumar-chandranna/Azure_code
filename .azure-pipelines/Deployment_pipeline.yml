@@ -472,12 +472,17 @@ jobs:
       # ── Deploy delta package ────────────────────────────────────────────────
       - script: |
           set +e
+          RESULTS_DIR="$(Build.SourcesDirectory)/test-results"
+          mkdir -p "$RESULTS_DIR"
           CMD=(sf project deploy start \
             --manifest "$(MANIFEST_PATH)" \
             --target-org "$(SF_USERNAME)" \
             --test-level "$(TEST_LEVEL)" \
             --wait 30 \
             --ignore-conflicts)
+          if [[ "$(TEST_LEVEL)" != "NoTestRun" ]]; then
+            CMD+=(--coverage-formatters json --results-dir "$RESULTS_DIR")
+          fi
           if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
             CMD+=(--tests $(TEST_CLASSES))
           fi
