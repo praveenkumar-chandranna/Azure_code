@@ -72,6 +72,7 @@ TYPE_MAP = {
     "remoteSiteSettings":                 "RemoteSiteSetting",
     "corsWhitelistOrigins":               "CorsWhitelistOrigin",
     "connectedApps":                      "ConnectedApp",
+    "externalClientApps":                  "ExternalClientApplication",
     "authproviders":                      "AuthProvider",
     "namedCredentials":                   "NamedCredential",
     "externalCredentials":                "ExternalCredential",
@@ -315,7 +316,7 @@ def strip_suffix(name):
         r'|sharingGuestRule|sharingTerritoryRule|duplicateRule|pathAssistant|quickAction|sharingSet'
         r'|workflow|workflowAlert|workflowFieldUpdate|workflowFlowAction'
         r'|workflowKnowledgePublish|workflowOutboundMessage|workflowRule|workflowSend|workflowTask'
-        r'|object|tab|customMetadata|namedCredential|connectedApp'
+        r'|object|tab|customMetadata|namedCredential|connectedApp|externalClientApp|eca'
         r'|authprovider|remoteSiteSetting|remoteSite|cspTrustedSite|corsWhitelistOrigin'
         r'|externalCredential|certificate|globalValueSet|standardValueSet'
         r'|globalValueSetTranslation|standardValueSetTranslation|translation|objectTranslation'
