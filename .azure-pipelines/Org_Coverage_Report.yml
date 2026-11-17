@@ -1,0 +1,235 @@
+name: RCPL Org Coverage Report
+
+schedules:
+  - cron: "30 22 * * *"
+    displayName: "Daily 4:00 AM IST - Org Coverage Report"
+    branches:
+      include:
+        - Dev
+        - QA
+        - UAT
+        - master
+    always: true
+
+trigger: none
+
+parameters:
+  - name: environment
+    type: string
+    displayName: "Target Org"
+    default: QA
+    values:
+      - QA
+      - UAT
+      - PROD
+
+variables:
+  - group: RCPL-Salesforce-Secrets
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+  - job: Org_Coverage_Report
+    displayName: "Apex Coverage Report - ${{ parameters.environment }}"
+    steps:
+      - checkout: self
+
+      - task: UseNode@1
+        displayName: "Setup Node.js 22"
+        inputs:
+          versionSource: spec
+          version: "22.x"
+
+      - script: |
+          npm install -g @salesforce/cli@latest
+          sf version
+        displayName: "Install Salesforce CLI"
+
+      - task: DownloadSecureFile@1
+        name: jwtKey
+        displayName: "Download JWT Key"
+        inputs:
+          secureFile: "server.key"
+
+      - script: chmod 600 "$(jwtKey.secureFilePath)"
+        displayName: "Set JWT Key Permissions"
+
+      - script: |
+          case "${{ parameters.environment }}" in
+            QA)
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_QA_USERNAME)"
+              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_QA)"
+              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(SANDBOX_URL)"
+              ;;
+            UAT)
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_UAT_USERNAME)"
+              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_UAT)"
+              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(SANDBOX_URL)"
+              ;;
+            PROD)
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_PROD_USERNAME)"
+              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_PROD)"
+              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(LOGIN_URL)"
+              ;;
+          esac
+        displayName: "Set Org Credentials"
+
+      - script: sf org logout --all --no-prompt || true
+        displayName: "Clear Prior Sessions"
+
+      - script: |
+          sf org login jwt \
+            --client-id "$(SF_CLIENT_ID)" \
+            --jwt-key-file "$(jwtKey.secureFilePath)" \
+            --username "$(SF_USERNAME)" \
+            --instance-url "$(SF_LOGIN_URL)" \
+            --set-default
+        displayName: "Authenticate to ${{ parameters.environment }} Org"
+
+      # ── Fetch all non-test Apex classes from org ────────────────────────────
+      - script: |
+          echo "Querying all non-test Apex classes from org..."
+          sf data query \
+            --query "SELECT Name FROM ApexClass WHERE IsTest = false AND Status = 'Active' ORDER BY Name" \
+            --target-org "$(SF_USERNAME)" \
+            --json > /tmp/apex_classes.json
+
+          CLASS_LIST=$(python3 -c "
+          import json, sys
+          data = json.load(open('/tmp/apex_classes.json'))
+          records = data.get('result', {}).get('records', [])
+          names = [r['Name'] for r in records if r.get('Name')]
+          print(','.join(names))
+          ")
+
+          if [[ -z "$CLASS_LIST" ]]; then
+            echo "ERROR: No Apex classes found in org"
+            exit 1
+          fi
+
+          COUNT=$(echo "$CLASS_LIST" | tr ',' '\n' | wc -l)
+          echo "Found $COUNT Apex classes"
+          echo "##vso[task.setvariable variable=APEX_CLASS_LIST]$CLASS_LIST"
+          echo "##vso[task.setvariable variable=APEX_CLASS_COUNT]$COUNT"
+        displayName: "Fetch All Apex Classes from Org"
+
+      # ── Run coverage check against all classes ──────────────────────────────
+      - script: |
+          IST_TIME=$(TZ='Asia/Kolkata' date +'%d-%m-%Y %H:%M:%S IST')
+          echo "Coverage report run at: $IST_TIME"
+          echo "##vso[task.setvariable variable=REPORT_TIME]$IST_TIME"
+
+          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+            --mode org \
+            --username "$(SF_USERNAME)" \
+            --classes "$(APEX_CLASS_LIST)" \
+            2>&1 | tee /tmp/coverage_raw.txt
+
+          # Capture exit code without failing the step - we want to publish results first
+          COVERAGE_EXIT=${PIPESTATUS[0]}
+          echo "##vso[task.setvariable variable=COVERAGE_EXIT]$COVERAGE_EXIT"
+          exit 0
+        displayName: "Run Coverage Check Against All Classes"
+
+      # ── Build markdown summary ───────────────────────────────────────────────
+      - script: |
+          python3 - <<'PYEOF'
+          import re, os
+
+          raw = open('/tmp/coverage_raw.txt').read()
+          report_time = os.environ.get('REPORT_TIME', '')
+          environment = '${{ parameters.environment }}'
+          threshold   = 85
+
+          # Parse table lines: "ClassName    covered    total    XX.X%  PASS/FAIL"
+          pass_rows = []
+          fail_rows = []
+          no_data   = []
+
+          for line in raw.splitlines():
+              line = line.rstrip()
+              # Match lines with coverage percentage
+              m = re.match(r'^(\S.*?)\s{2,}(\d+)\s+(\d+)\s+([\d.]+)%\s+(PASS|FAIL)\s*$', line)
+              if m:
+                  name, covered, total, pct, status = m.group(1).strip(), int(m.group(2)), int(m.group(3)), float(m.group(4)), m.group(5)
+                  if status == 'PASS':
+                      pass_rows.append((name, covered, total, pct))
+                  else:
+                      fail_rows.append((name, covered, total, pct))
+                  continue
+              # Match NO DATA lines
+              m2 = re.match(r'^(\S.*?)\s{2,}N/A\s+N/A\s+NO DATA\s+FAIL\s*$', line)
+              if m2:
+                  no_data.append(m2.group(1).strip())
+
+          # Sort fail rows by coverage ascending (worst first)
+          fail_rows.sort(key=lambda x: x[3])
+
+          total_classes = len(pass_rows) + len(fail_rows) + len(no_data)
+          summary_path  = os.environ.get('BUILD_SOURCESDIRECTORY', '.') + '/coverage-report.md'
+
+          with open(summary_path, 'w') as f:
+              f.write(f"## Apex Code Coverage Report - {environment}\n\n")
+              f.write(f"**Run Time:** {report_time}  \n")
+              f.write(f"**Threshold:** {threshold}%  \n")
+              f.write(f"**Total Classes:** {total_classes}  \n")
+              f.write(f"**Passing:** {len(pass_rows)}  \n")
+              f.write(f"**Failing:** {len(fail_rows) + len(no_data)}  \n\n")
+
+              # --- Below threshold section ---
+              if fail_rows or no_data:
+                  f.write(f"### ❌ Classes Below {threshold}% (Action Required)\n\n")
+                  f.write("| Class | Covered Lines | Total Lines | Coverage |\n")
+                  f.write("|---|---|---|---|\n")
+                  for name, covered, total, pct in fail_rows:
+                      f.write(f"| {name} | {covered} | {total} | {pct:.1f}% |\n")
+                  for name in no_data:
+                      f.write(f"| {name} | N/A | N/A | NO DATA |\n")
+                  f.write("\n")
+
+              # --- Passing section ---
+              if pass_rows:
+                  f.write(f"### ✅ Classes Meeting {threshold}%\n\n")
+                  f.write("| Class | Covered Lines | Total Lines | Coverage |\n")
+                  f.write("|---|---|---|---|\n")
+                  for name, covered, total, pct in pass_rows:
+                      f.write(f"| {name} | {covered} | {total} | {pct:.1f}% |\n")
+                  f.write("\n")
+
+              if not pass_rows and not fail_rows and not no_data:
+                  f.write("_No coverage data found. Ensure test classes have been executed in the org._\n")
+
+          print(f"Summary written to {summary_path}")
+          print(f"Total: {total_classes} | Pass: {len(pass_rows)} | Fail: {len(fail_rows) + len(no_data)}")
+          PYEOF
+
+          echo "##vso[task.uploadsummary]$(Build.SourcesDirectory)/coverage-report.md"
+        displayName: "Build Coverage Summary"
+        env:
+          REPORT_TIME: $(REPORT_TIME)
+
+      # ── Print below-threshold classes to pipeline log ───────────────────────
+      - script: |
+          echo "=============================================="
+          echo "  CLASSES BELOW 85% COVERAGE THRESHOLD"
+          echo "=============================================="
+          grep "FAIL" /tmp/coverage_raw.txt || echo "None found or no data."
+          echo ""
+          echo "=============================================="
+          echo "  FULL COVERAGE OUTPUT"
+          echo "=============================================="
+          cat /tmp/coverage_raw.txt
+
+          # Now enforce exit code
+          if [[ "$(COVERAGE_EXIT)" != "0" ]]; then
+            echo ""
+            echo "COVERAGE REPORT: One or more classes are below 85% threshold."
+            exit 1
+          fi
+          echo "COVERAGE REPORT: All classes meet the 85% threshold."
+        displayName: "Print Coverage Results & Enforce Threshold"
+
+      - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+        displayName: "JWT Key Cleanup"
+        condition: always()
