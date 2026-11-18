@@ -147,13 +147,13 @@ jobs:
               --target-org "$(SF_ENV_ALIAS)" \
               --test-level "$TESTLEVEL" \
               --tests $TESTS \
-              --wait 30
+              --wait 120
           else
             sf project deploy validate \
               --manifest "$PACKAGE_XML" \
               --target-org "$(SF_ENV_ALIAS)" \
               --test-level "$TESTLEVEL" \
-              --wait 30
+              --wait 120
           fi
         displayName: "Deployment Validation"
 

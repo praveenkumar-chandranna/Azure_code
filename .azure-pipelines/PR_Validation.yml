@@ -421,7 +421,7 @@ jobs:
             --dry-run \
             --target-org "$(SF_USERNAME)" \
             --manifest "$(PACKAGE_PATH)" \
-            --wait 60 \
+            --wait 120 \
             --ignore-warnings \
             --test-level "$(TEST_LEVEL)" \
             --verbose)

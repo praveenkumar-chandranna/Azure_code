@@ -142,7 +142,7 @@ jobs:
           sf project deploy quick \
             --job-id "${{ parameters.Validation_Job_Id }}" \
             --target-org "$(SF_USERNAME)" \
-            --wait 30
+            --wait 120
           DEPLOY_EXIT=${PIPESTATUS[0]}
           set -e
           [[ "$DEPLOY_EXIT" != "0" ]] && { echo "QUICK DEPLOY FAILED"; exit 1; }
@@ -483,7 +483,7 @@ jobs:
             --manifest "$(MANIFEST_PATH)" \
             --target-org "$(SF_USERNAME)" \
             --test-level "$(TEST_LEVEL)" \
-            --wait 30 \
+            --wait 120 \
             --ignore-conflicts)
           if [[ "$(TEST_LEVEL)" != "NoTestRun" ]]; then
             CMD+=(--coverage-formatters json --results-dir "$RESULTS_DIR")
