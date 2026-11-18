@@ -5,23 +5,11 @@ schedules:
     displayName: "Daily 4:00 AM IST - Org Coverage Report"
     branches:
       include:
-        - Dev
         - QA
         - UAT
-        - master
     always: true
 
 trigger: none
-
-parameters:
-  - name: environment
-    type: string
-    displayName: "Target Org"
-    default: QA
-    values:
-      - QA
-      - UAT
-      - PROD
 
 variables:
   - group: RCPL-Salesforce-Secrets
@@ -30,10 +18,15 @@ pool:
   vmImage: ubuntu-latest
 
 jobs:
-  - job: Org_Coverage_Report
-    displayName: "Apex Coverage Report - ${{ parameters.environment }}"
+
+# ── JOB 1: QA branch -> QA org ─────────────────────────────────────────────
+  - job: Coverage_QA
+    displayName: "QA Branch - Run Tests & Coverage Report"
+    timeoutInMinutes: 180
+    condition: eq(variables['Build.SourceBranchName'], 'QA')
     steps:
       - checkout: self
+        fetchDepth: 0
 
       - task: UseNode@1
         displayName: "Setup Node.js 22"
@@ -55,181 +48,598 @@ jobs:
       - script: chmod 600 "$(jwtKey.secureFilePath)"
         displayName: "Set JWT Key Permissions"
 
-      - script: |
-          case "${{ parameters.environment }}" in
-            QA)
-              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_QA_USERNAME)"
-              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_QA)"
-              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(SANDBOX_URL)"
-              ;;
-            UAT)
-              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_UAT_USERNAME)"
-              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_UAT)"
-              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(SANDBOX_URL)"
-              ;;
-            PROD)
-              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_PROD_USERNAME)"
-              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_PROD)"
-              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(LOGIN_URL)"
-              ;;
-          esac
-        displayName: "Set Org Credentials"
-
       - script: sf org logout --all --no-prompt || true
         displayName: "Clear Prior Sessions"
 
       - script: |
           sf org login jwt \
-            --client-id "$(SF_CLIENT_ID)" \
+            --client-id "$(SALESFORCE_CONSUMER_KEY_QA)" \
             --jwt-key-file "$(jwtKey.secureFilePath)" \
-            --username "$(SF_USERNAME)" \
-            --instance-url "$(SF_LOGIN_URL)" \
+            --username "$(SFDX_AUTH_QA_USERNAME)" \
+            --instance-url "$(SANDBOX_URL)" \
             --set-default
-        displayName: "Authenticate to ${{ parameters.environment }} Org"
+        displayName: "Authenticate to QA Org"
 
-      # ── Fetch all non-test Apex classes from org ────────────────────────────
       - script: |
-          echo "Querying all non-test Apex classes from org..."
+          TC_FILE="$(Build.SourcesDirectory)/TestClass.txt"
+          if [[ -f "$TC_FILE" && -s "$TC_FILE" ]]; then
+            TEST_CLASSES=$(cat "$TC_FILE" | tr '\n' ' ' | xargs)
+            echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+            echo "RunSpecifiedTests: $TEST_CLASSES"
+          else
+            echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]"
+            echo "No TestClass.txt - RunLocalTests"
+          fi
+        displayName: "Resolve Test Classes"
+
+      - script: |
+          set +e
+          RESULTS_DIR="$(Build.SourcesDirectory)/test-results-qa"
+          mkdir -p "$RESULTS_DIR"
+          if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]]; then
+            sf apex run test \
+              --tests $(TEST_CLASSES) \
+              --target-org "$(SFDX_AUTH_QA_USERNAME)" \
+              --result-format json \
+              --output-dir "$RESULTS_DIR" \
+              --wait 120
+          else
+            sf apex run test \
+              --test-level RunLocalTests \
+              --target-org "$(SFDX_AUTH_QA_USERNAME)" \
+              --result-format json \
+              --output-dir "$RESULTS_DIR" \
+              --wait 120
+          fi
+          echo "##vso[task.setvariable variable=RESULTS_DIR_QA]$RESULTS_DIR"
+          exit 0
+        displayName: "Run Test Classes in QA Org"
+
+      - script: |
+          echo "Querying all non-test Apex classes from QA org..."
           sf data query \
-            --query "SELECT Name FROM ApexClass WHERE IsTest = false AND Status = 'Active' ORDER BY Name" \
-            --target-org "$(SF_USERNAME)" \
-            --json > /tmp/apex_classes.json
+            --query "SELECT Name, Body FROM ApexClass WHERE Status = 'Active' ORDER BY Name" \
+            --target-org "$(SFDX_AUTH_QA_USERNAME)" \
+            --json > /tmp/apex_classes_qa.json
 
           CLASS_LIST=$(python3 -c "
-          import json, sys
-          data = json.load(open('/tmp/apex_classes.json'))
+          import json
+          data = json.load(open('/tmp/apex_classes_qa.json'))
           records = data.get('result', {}).get('records', [])
-          names = [r['Name'] for r in records if r.get('Name')]
+          names = [r['Name'] for r in records if r.get('Name') and '@istest' not in (r.get('Body') or '').lower()]
           print(','.join(names))
           ")
 
           if [[ -z "$CLASS_LIST" ]]; then
-            echo "ERROR: No Apex classes found in org"
-            exit 1
+            sf data query \
+              --query "SELECT Name, Body FROM ApexClass ORDER BY Name" \
+              --target-org "$(SFDX_AUTH_QA_USERNAME)" \
+              --json > /tmp/apex_classes_qa.json
+            CLASS_LIST=$(python3 -c "
+          import json
+          data = json.load(open('/tmp/apex_classes_qa.json'))
+          records = data.get('result', {}).get('records', [])
+          names = [r['Name'] for r in records if r.get('Name') and '@istest' not in (r.get('Body') or '').lower()]
+          print(','.join(names))
+            ")
           fi
 
+          if [[ -z "$CLASS_LIST" ]]; then
+            echo "ERROR: No Apex classes found in QA org"
+            exit 1
+          fi
           COUNT=$(echo "$CLASS_LIST" | tr ',' '\n' | wc -l)
           echo "Found $COUNT Apex classes"
-          echo "##vso[task.setvariable variable=APEX_CLASS_LIST]$CLASS_LIST"
-          echo "##vso[task.setvariable variable=APEX_CLASS_COUNT]$COUNT"
-        displayName: "Fetch All Apex Classes from Org"
+          echo "##vso[task.setvariable variable=APEX_CLASS_LIST_QA]$CLASS_LIST"
+        displayName: "Fetch All Apex Classes from QA Org"
 
-      # ── Run coverage check against all classes ──────────────────────────────
       - script: |
           IST_TIME=$(TZ='Asia/Kolkata' date +'%d-%m-%Y %H:%M:%S IST')
-          echo "Coverage report run at: $IST_TIME"
-          echo "##vso[task.setvariable variable=REPORT_TIME]$IST_TIME"
+          IST_TS=$(TZ='Asia/Kolkata' date +'%d%m%Y_%H%M%S')
+          echo "##vso[task.setvariable variable=REPORT_TIME_QA]$IST_TIME"
+          echo "##vso[task.setvariable variable=IST_TS_QA]$IST_TS"
 
           python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
             --mode org \
-            --username "$(SF_USERNAME)" \
-            --classes "$(APEX_CLASS_LIST)" \
-            2>&1 | tee /tmp/coverage_raw.txt
+            --username "$(SFDX_AUTH_QA_USERNAME)" \
+            --classes "$(APEX_CLASS_LIST_QA)" \
+            2>&1 | tee /tmp/coverage_raw_qa.txt
 
-          # Capture exit code without failing the step - we want to publish results first
           COVERAGE_EXIT=${PIPESTATUS[0]}
-          echo "##vso[task.setvariable variable=COVERAGE_EXIT]$COVERAGE_EXIT"
+          echo "##vso[task.setvariable variable=COVERAGE_EXIT_QA]$COVERAGE_EXIT"
           exit 0
-        displayName: "Run Coverage Check Against All Classes"
+        displayName: "Run Coverage Check - QA"
 
-      # ── Build markdown summary ───────────────────────────────────────────────
       - script: |
           python3 - <<'PYEOF'
           import re, os
-
-          raw = open('/tmp/coverage_raw.txt').read()
-          report_time = os.environ.get('REPORT_TIME', '')
-          environment = '${{ parameters.environment }}'
-          threshold   = 85
-
-          # Parse table lines: "ClassName    covered    total    XX.X%  PASS/FAIL"
-          pass_rows = []
-          fail_rows = []
-          no_data   = []
-
+          raw = open('/tmp/coverage_raw_qa.txt').read()
+          report_time = os.environ.get('REPORT_TIME_QA', '')
+          threshold = 85
+          pass_rows, fail_rows, no_data = [], [], []
           for line in raw.splitlines():
               line = line.rstrip()
-              # Match lines with coverage percentage
               m = re.match(r'^(\S.*?)\s{2,}(\d+)\s+(\d+)\s+([\d.]+)%\s+(PASS|FAIL)\s*$', line)
               if m:
                   name, covered, total, pct, status = m.group(1).strip(), int(m.group(2)), int(m.group(3)), float(m.group(4)), m.group(5)
-                  if status == 'PASS':
-                      pass_rows.append((name, covered, total, pct))
-                  else:
-                      fail_rows.append((name, covered, total, pct))
+                  (pass_rows if status == 'PASS' else fail_rows).append((name, covered, total, pct))
                   continue
-              # Match NO DATA lines
               m2 = re.match(r'^(\S.*?)\s{2,}N/A\s+N/A\s+NO DATA\s+FAIL\s*$', line)
               if m2:
                   no_data.append(m2.group(1).strip())
-
-          # Sort fail rows by coverage ascending (worst first)
           fail_rows.sort(key=lambda x: x[3])
-
           total_classes = len(pass_rows) + len(fail_rows) + len(no_data)
-          summary_path  = os.environ.get('BUILD_SOURCESDIRECTORY', '.') + '/coverage-report.md'
-
+          summary_path = os.environ.get('BUILD_SOURCESDIRECTORY', '.') + '/coverage-report-qa.md'
           with open(summary_path, 'w') as f:
-              f.write(f"## Apex Code Coverage Report - {environment}\n\n")
+              f.write(f"## Apex Code Coverage Report - QA\n\n")
               f.write(f"**Run Time:** {report_time}  \n")
               f.write(f"**Threshold:** {threshold}%  \n")
               f.write(f"**Total Classes:** {total_classes}  \n")
               f.write(f"**Passing:** {len(pass_rows)}  \n")
               f.write(f"**Failing:** {len(fail_rows) + len(no_data)}  \n\n")
-
-              # --- Below threshold section ---
               if fail_rows or no_data:
-                  f.write(f"### ❌ Classes Below {threshold}% (Action Required)\n\n")
+                  f.write(f"### Classes Below {threshold}%\n\n")
                   f.write("| Class | Covered Lines | Total Lines | Coverage |\n")
                   f.write("|---|---|---|---|\n")
                   for name, covered, total, pct in fail_rows:
                       f.write(f"| {name} | {covered} | {total} | {pct:.1f}% |\n")
                   for name in no_data:
                       f.write(f"| {name} | N/A | N/A | NO DATA |\n")
-                  f.write("\n")
-
-              # --- Passing section ---
               if pass_rows:
-                  f.write(f"### ✅ Classes Meeting {threshold}%\n\n")
+                  f.write(f"### Classes Meeting {threshold}%\n\n")
                   f.write("| Class | Covered Lines | Total Lines | Coverage |\n")
                   f.write("|---|---|---|---|\n")
                   for name, covered, total, pct in pass_rows:
                       f.write(f"| {name} | {covered} | {total} | {pct:.1f}% |\n")
-                  f.write("\n")
-
-              if not pass_rows and not fail_rows and not no_data:
-                  f.write("_No coverage data found. Ensure test classes have been executed in the org._\n")
-
-          print(f"Summary written to {summary_path}")
           print(f"Total: {total_classes} | Pass: {len(pass_rows)} | Fail: {len(fail_rows) + len(no_data)}")
           PYEOF
-
-          echo "##vso[task.uploadsummary]$(Build.SourcesDirectory)/coverage-report.md"
-        displayName: "Build Coverage Summary"
+          echo "##vso[task.uploadsummary]$(Build.SourcesDirectory)/coverage-report-qa.md"
+        displayName: "Build Markdown Summary - QA"
         env:
-          REPORT_TIME: $(REPORT_TIME)
+          REPORT_TIME_QA: $(REPORT_TIME_QA)
 
-      # ── Print below-threshold classes to pipeline log ───────────────────────
+      - script: pip install openpyxl --quiet
+        displayName: "Install openpyxl"
+        condition: always()
+
+      - script: |
+          python3 - <<'PYEOF'
+          import re, os
+          from openpyxl import Workbook
+          from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+          from openpyxl.utils import get_column_letter
+
+          raw         = open('/tmp/coverage_raw_qa.txt').read()
+          report_time = os.environ.get('REPORT_TIME_QA', '')
+          sources_dir = os.environ.get('BUILD_SOURCESDIRECTORY', '.')
+          ist_ts      = os.environ.get('IST_TS_QA', 'report')
+          threshold   = 85
+
+          pass_rows, fail_rows, no_data = [], [], []
+          for line in raw.splitlines():
+              line = line.rstrip()
+              m = re.match(r'^(\S.*?)\s{2,}(\d+)\s+(\d+)\s+([\d.]+)%\s+(PASS|FAIL)\s*$', line)
+              if m:
+                  name, covered, total, pct, status = m.group(1).strip(), int(m.group(2)), int(m.group(3)), float(m.group(4)), m.group(5)
+                  (pass_rows if status == 'PASS' else fail_rows).append((name, covered, total, pct, status))
+                  continue
+              m2 = re.match(r'^(\S.*?)\s{2,}N/A\s+N/A\s+NO DATA\s+FAIL\s*$', line)
+              if m2:
+                  no_data.append((m2.group(1).strip(), 'N/A', 'N/A', 0.0, 'FAIL'))
+
+          fail_rows.sort(key=lambda x: x[3])
+          all_rows = fail_rows + no_data + pass_rows
+
+          GREEN_FILL  = PatternFill('solid', fgColor='C6EFCE')
+          RED_FILL    = PatternFill('solid', fgColor='FFC7CE')
+          ORANGE_FILL = PatternFill('solid', fgColor='FFEB9C')
+          HEADER_FILL = PatternFill('solid', fgColor='1F4E79')
+          SUMMARY_FILL= PatternFill('solid', fgColor='2E75B6')
+          WHITE_FONT  = Font(bold=True, color='FFFFFF')
+          BOLD_FONT   = Font(bold=True)
+          CENTER      = Alignment(horizontal='center', vertical='center')
+          LEFT        = Alignment(horizontal='left',   vertical='center')
+          thin        = Side(style='thin', color='BFBFBF')
+          BORDER      = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+          wb = Workbook()
+          ws_sum = wb.active
+          ws_sum.title = 'Summary'
+          ws_sum.column_dimensions['A'].width = 30
+          ws_sum.column_dimensions['B'].width = 20
+          for r, (label, value) in enumerate([
+              ('Org / Environment', 'QA'),
+              ('Report Generated',  report_time),
+              ('Coverage Threshold',f'{threshold}%'),
+              ('Total Classes',     len(all_rows)),
+              ('Passing Classes',   len(pass_rows)),
+              ('Failing Classes',   len(fail_rows) + len(no_data)),
+              ('No Data Classes',   len(no_data)),
+          ], start=1):
+              c1 = ws_sum.cell(r, 1, label)
+              c2 = ws_sum.cell(r, 2, value)
+              c1.fill = SUMMARY_FILL; c1.font = WHITE_FONT; c1.border = BORDER; c1.alignment = LEFT
+              c2.border = BORDER; c2.alignment = LEFT
+              if label == 'Passing Classes': c2.fill = GREEN_FILL; c2.font = BOLD_FONT
+              elif label == 'Failing Classes': c2.fill = RED_FILL; c2.font = BOLD_FONT
+
+          headers    = ['#', 'Class Name', 'Covered Lines', 'Total Lines', 'Coverage %', 'Status']
+          col_widths = [5, 50, 16, 14, 14, 10]
+          for ws in [wb.create_sheet('Coverage Detail'), wb.create_sheet('Below Threshold')]:
+              for col, (h, w) in enumerate(zip(headers, col_widths), start=1):
+                  cell = ws.cell(1, col, h)
+                  cell.fill = HEADER_FILL; cell.font = WHITE_FONT; cell.alignment = CENTER; cell.border = BORDER
+                  ws.column_dimensions[get_column_letter(col)].width = w
+              ws.row_dimensions[1].height = 20
+
+          ws_detail = wb['Coverage Detail']
+          for idx, (name, covered, total, pct, status) in enumerate(all_rows, start=1):
+              row_fill    = GREEN_FILL if status == 'PASS' else (ORANGE_FILL if covered == 'N/A' else RED_FILL)
+              pct_display = f'{pct:.1f}%' if covered != 'N/A' else 'NO DATA'
+              for col, val in enumerate([idx, name, covered, total, pct_display, status], start=1):
+                  cell = ws_detail.cell(idx + 1, col, val)
+                  cell.fill = row_fill; cell.border = BORDER
+                  cell.alignment = CENTER if col != 2 else LEFT
+
+          ws_fail = wb['Below Threshold']
+          fail_all = fail_rows + no_data
+          if fail_all:
+              for idx, (name, covered, total, pct, status) in enumerate(fail_all, start=1):
+                  pct_display = f'{pct:.1f}%' if covered != 'N/A' else 'NO DATA'
+                  row_fill = ORANGE_FILL if covered == 'N/A' else RED_FILL
+                  for col, val in enumerate([idx, name, covered, total, pct_display, status], start=1):
+                      cell = ws_fail.cell(idx + 1, col, val)
+                      cell.fill = row_fill; cell.border = BORDER
+                      cell.alignment = CENTER if col != 2 else LEFT
+          else:
+              ws_fail.cell(2, 1, 'All classes meet the coverage threshold').font = Font(bold=True, color='375623')
+
+          xlsx_path = f'{sources_dir}/coverage-report-QA_{ist_ts}.xlsx'
+          wb.save(xlsx_path)
+          print(f'Excel saved: {xlsx_path}')
+          PYEOF
+        displayName: "Generate Excel Coverage Report - QA"
+        condition: always()
+        env:
+          REPORT_TIME_QA: $(REPORT_TIME_QA)
+          IST_TS_QA:      $(IST_TS_QA)
+
+      - task: PublishPipelineArtifact@1
+        displayName: "Publish Excel Coverage Report - QA"
+        condition: always()
+        inputs:
+          targetPath: "$(Build.SourcesDirectory)/coverage-report-QA_$(IST_TS_QA).xlsx"
+          artifact:   "apex-coverage-report-QA_$(IST_TS_QA)"
+
       - script: |
           echo "=============================================="
-          echo "  CLASSES BELOW 85% COVERAGE THRESHOLD"
+          echo "  QA CLASSES BELOW 85% COVERAGE THRESHOLD"
           echo "=============================================="
-          grep "FAIL" /tmp/coverage_raw.txt || echo "None found or no data."
+          grep "FAIL" /tmp/coverage_raw_qa.txt || echo "None found or no data."
           echo ""
-          echo "=============================================="
-          echo "  FULL COVERAGE OUTPUT"
-          echo "=============================================="
-          cat /tmp/coverage_raw.txt
-
-          # Now enforce exit code
-          if [[ "$(COVERAGE_EXIT)" != "0" ]]; then
-            echo ""
-            echo "COVERAGE REPORT: One or more classes are below 85% threshold."
+          cat /tmp/coverage_raw_qa.txt
+          if [[ "$(COVERAGE_EXIT_QA)" != "0" ]]; then
+            echo "COVERAGE REPORT QA: One or more classes below 85%."
             exit 1
           fi
-          echo "COVERAGE REPORT: All classes meet the 85% threshold."
-        displayName: "Print Coverage Results & Enforce Threshold"
+          echo "COVERAGE REPORT QA: All classes meet 85% threshold."
+        displayName: "Print QA Coverage Results & Enforce Threshold"
 
       - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
-        displayName: "JWT Key Cleanup"
+        displayName: "JWT Key Cleanup - QA"
+        condition: always()
+
+
+# ── JOB 2: UAT branch -> UAT org ───────────────────────────────────────────
+  - job: Coverage_UAT
+    displayName: "UAT Branch - Run Tests & Coverage Report"
+    timeoutInMinutes: 180
+    condition: eq(variables['Build.SourceBranchName'], 'UAT')
+    steps:
+      - checkout: self
+        fetchDepth: 0
+
+      - task: UseNode@1
+        displayName: "Setup Node.js 22"
+        inputs:
+          versionSource: spec
+          version: "22.x"
+
+      - script: |
+          npm install -g @salesforce/cli@latest
+          sf version
+        displayName: "Install Salesforce CLI"
+
+      - task: DownloadSecureFile@1
+        name: jwtKey
+        displayName: "Download JWT Key"
+        inputs:
+          secureFile: "server.key"
+
+      - script: chmod 600 "$(jwtKey.secureFilePath)"
+        displayName: "Set JWT Key Permissions"
+
+      - script: sf org logout --all --no-prompt || true
+        displayName: "Clear Prior Sessions"
+
+      - script: |
+          sf org login jwt \
+            --client-id "$(SALESFORCE_CONSUMER_KEY_UAT)" \
+            --jwt-key-file "$(jwtKey.secureFilePath)" \
+            --username "$(SFDX_AUTH_UAT_USERNAME)" \
+            --instance-url "$(SANDBOX_URL)" \
+            --set-default
+        displayName: "Authenticate to UAT Org"
+
+      - script: |
+          TC_FILE="$(Build.SourcesDirectory)/TestClass.txt"
+          if [[ -f "$TC_FILE" && -s "$TC_FILE" ]]; then
+            TEST_CLASSES=$(cat "$TC_FILE" | tr '\n' ' ' | xargs)
+            echo "##vso[task.setvariable variable=TEST_CLASSES_UAT]$TEST_CLASSES"
+            echo "##vso[task.setvariable variable=TEST_LEVEL_UAT]RunSpecifiedTests"
+            echo "RunSpecifiedTests: $TEST_CLASSES"
+          else
+            echo "##vso[task.setvariable variable=TEST_LEVEL_UAT]RunLocalTests"
+            echo "##vso[task.setvariable variable=TEST_CLASSES_UAT]"
+            echo "No TestClass.txt - RunLocalTests"
+          fi
+        displayName: "Resolve Test Classes"
+
+      - script: |
+          set +e
+          RESULTS_DIR="$(Build.SourcesDirectory)/test-results-uat"
+          mkdir -p "$RESULTS_DIR"
+          if [[ "$(TEST_LEVEL_UAT)" == "RunSpecifiedTests" ]]; then
+            sf apex run test \
+              --tests $(TEST_CLASSES_UAT) \
+              --target-org "$(SFDX_AUTH_UAT_USERNAME)" \
+              --result-format json \
+              --output-dir "$RESULTS_DIR" \
+              --wait 120
+          else
+            sf apex run test \
+              --test-level RunLocalTests \
+              --target-org "$(SFDX_AUTH_UAT_USERNAME)" \
+              --result-format json \
+              --output-dir "$RESULTS_DIR" \
+              --wait 120
+          fi
+          echo "##vso[task.setvariable variable=RESULTS_DIR_UAT]$RESULTS_DIR"
+          exit 0
+        displayName: "Run Test Classes in UAT Org"
+
+      - script: |
+          echo "Querying all non-test Apex classes from UAT org..."
+          sf data query \
+            --query "SELECT Name, Body FROM ApexClass WHERE Status = 'Active' ORDER BY Name" \
+            --target-org "$(SFDX_AUTH_UAT_USERNAME)" \
+            --json > /tmp/apex_classes_uat.json
+
+          CLASS_LIST=$(python3 -c "
+          import json
+          data = json.load(open('/tmp/apex_classes_uat.json'))
+          records = data.get('result', {}).get('records', [])
+          names = [r['Name'] for r in records if r.get('Name') and '@istest' not in (r.get('Body') or '').lower()]
+          print(','.join(names))
+          ")
+
+          if [[ -z "$CLASS_LIST" ]]; then
+            sf data query \
+              --query "SELECT Name, Body FROM ApexClass ORDER BY Name" \
+              --target-org "$(SFDX_AUTH_UAT_USERNAME)" \
+              --json > /tmp/apex_classes_uat.json
+            CLASS_LIST=$(python3 -c "
+          import json
+          data = json.load(open('/tmp/apex_classes_uat.json'))
+          records = data.get('result', {}).get('records', [])
+          names = [r['Name'] for r in records if r.get('Name') and '@istest' not in (r.get('Body') or '').lower()]
+          print(','.join(names))
+            ")
+          fi
+
+          if [[ -z "$CLASS_LIST" ]]; then
+            echo "ERROR: No Apex classes found in UAT org"
+            exit 1
+          fi
+          COUNT=$(echo "$CLASS_LIST" | tr ',' '\n' | wc -l)
+          echo "Found $COUNT Apex classes"
+          echo "##vso[task.setvariable variable=APEX_CLASS_LIST_UAT]$CLASS_LIST"
+        displayName: "Fetch All Apex Classes from UAT Org"
+
+      - script: |
+          IST_TIME=$(TZ='Asia/Kolkata' date +'%d-%m-%Y %H:%M:%S IST')
+          IST_TS=$(TZ='Asia/Kolkata' date +'%d%m%Y_%H%M%S')
+          echo "##vso[task.setvariable variable=REPORT_TIME_UAT]$IST_TIME"
+          echo "##vso[task.setvariable variable=IST_TS_UAT]$IST_TS"
+
+          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+            --mode org \
+            --username "$(SFDX_AUTH_UAT_USERNAME)" \
+            --classes "$(APEX_CLASS_LIST_UAT)" \
+            2>&1 | tee /tmp/coverage_raw_uat.txt
+
+          COVERAGE_EXIT=${PIPESTATUS[0]}
+          echo "##vso[task.setvariable variable=COVERAGE_EXIT_UAT]$COVERAGE_EXIT"
+          exit 0
+        displayName: "Run Coverage Check - UAT"
+
+      - script: |
+          python3 - <<'PYEOF'
+          import re, os
+          raw = open('/tmp/coverage_raw_uat.txt').read()
+          report_time = os.environ.get('REPORT_TIME_UAT', '')
+          threshold = 85
+          pass_rows, fail_rows, no_data = [], [], []
+          for line in raw.splitlines():
+              line = line.rstrip()
+              m = re.match(r'^(\S.*?)\s{2,}(\d+)\s+(\d+)\s+([\d.]+)%\s+(PASS|FAIL)\s*$', line)
+              if m:
+                  name, covered, total, pct, status = m.group(1).strip(), int(m.group(2)), int(m.group(3)), float(m.group(4)), m.group(5)
+                  (pass_rows if status == 'PASS' else fail_rows).append((name, covered, total, pct))
+                  continue
+              m2 = re.match(r'^(\S.*?)\s{2,}N/A\s+N/A\s+NO DATA\s+FAIL\s*$', line)
+              if m2:
+                  no_data.append(m2.group(1).strip())
+          fail_rows.sort(key=lambda x: x[3])
+          total_classes = len(pass_rows) + len(fail_rows) + len(no_data)
+          summary_path = os.environ.get('BUILD_SOURCESDIRECTORY', '.') + '/coverage-report-uat.md'
+          with open(summary_path, 'w') as f:
+              f.write(f"## Apex Code Coverage Report - UAT\n\n")
+              f.write(f"**Run Time:** {report_time}  \n")
+              f.write(f"**Threshold:** {threshold}%  \n")
+              f.write(f"**Total Classes:** {total_classes}  \n")
+              f.write(f"**Passing:** {len(pass_rows)}  \n")
+              f.write(f"**Failing:** {len(fail_rows) + len(no_data)}  \n\n")
+              if fail_rows or no_data:
+                  f.write(f"### Classes Below {threshold}%\n\n")
+                  f.write("| Class | Covered Lines | Total Lines | Coverage |\n")
+                  f.write("|---|---|---|---|\n")
+                  for name, covered, total, pct in fail_rows:
+                      f.write(f"| {name} | {covered} | {total} | {pct:.1f}% |\n")
+                  for name in no_data:
+                      f.write(f"| {name} | N/A | N/A | NO DATA |\n")
+              if pass_rows:
+                  f.write(f"### Classes Meeting {threshold}%\n\n")
+                  f.write("| Class | Covered Lines | Total Lines | Coverage |\n")
+                  f.write("|---|---|---|---|\n")
+                  for name, covered, total, pct in pass_rows:
+                      f.write(f"| {name} | {covered} | {total} | {pct:.1f}% |\n")
+          print(f"Total: {total_classes} | Pass: {len(pass_rows)} | Fail: {len(fail_rows) + len(no_data)}")
+          PYEOF
+          echo "##vso[task.uploadsummary]$(Build.SourcesDirectory)/coverage-report-uat.md"
+        displayName: "Build Markdown Summary - UAT"
+        env:
+          REPORT_TIME_UAT: $(REPORT_TIME_UAT)
+
+      - script: pip install openpyxl --quiet
+        displayName: "Install openpyxl"
+        condition: always()
+
+      - script: |
+          python3 - <<'PYEOF'
+          import re, os
+          from openpyxl import Workbook
+          from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+          from openpyxl.utils import get_column_letter
+
+          raw         = open('/tmp/coverage_raw_uat.txt').read()
+          report_time = os.environ.get('REPORT_TIME_UAT', '')
+          sources_dir = os.environ.get('BUILD_SOURCESDIRECTORY', '.')
+          ist_ts      = os.environ.get('IST_TS_UAT', 'report')
+          threshold   = 85
+
+          pass_rows, fail_rows, no_data = [], [], []
+          for line in raw.splitlines():
+              line = line.rstrip()
+              m = re.match(r'^(\S.*?)\s{2,}(\d+)\s+(\d+)\s+([\d.]+)%\s+(PASS|FAIL)\s*$', line)
+              if m:
+                  name, covered, total, pct, status = m.group(1).strip(), int(m.group(2)), int(m.group(3)), float(m.group(4)), m.group(5)
+                  (pass_rows if status == 'PASS' else fail_rows).append((name, covered, total, pct, status))
+                  continue
+              m2 = re.match(r'^(\S.*?)\s{2,}N/A\s+N/A\s+NO DATA\s+FAIL\s*$', line)
+              if m2:
+                  no_data.append((m2.group(1).strip(), 'N/A', 'N/A', 0.0, 'FAIL'))
+
+          fail_rows.sort(key=lambda x: x[3])
+          all_rows = fail_rows + no_data + pass_rows
+
+          GREEN_FILL  = PatternFill('solid', fgColor='C6EFCE')
+          RED_FILL    = PatternFill('solid', fgColor='FFC7CE')
+          ORANGE_FILL = PatternFill('solid', fgColor='FFEB9C')
+          HEADER_FILL = PatternFill('solid', fgColor='1F4E79')
+          SUMMARY_FILL= PatternFill('solid', fgColor='2E75B6')
+          WHITE_FONT  = Font(bold=True, color='FFFFFF')
+          BOLD_FONT   = Font(bold=True)
+          CENTER      = Alignment(horizontal='center', vertical='center')
+          LEFT        = Alignment(horizontal='left',   vertical='center')
+          thin        = Side(style='thin', color='BFBFBF')
+          BORDER      = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+          wb = Workbook()
+          ws_sum = wb.active
+          ws_sum.title = 'Summary'
+          ws_sum.column_dimensions['A'].width = 30
+          ws_sum.column_dimensions['B'].width = 20
+          for r, (label, value) in enumerate([
+              ('Org / Environment', 'UAT'),
+              ('Report Generated',  report_time),
+              ('Coverage Threshold',f'{threshold}%'),
+              ('Total Classes',     len(all_rows)),
+              ('Passing Classes',   len(pass_rows)),
+              ('Failing Classes',   len(fail_rows) + len(no_data)),
+              ('No Data Classes',   len(no_data)),
+          ], start=1):
+              c1 = ws_sum.cell(r, 1, label)
+              c2 = ws_sum.cell(r, 2, value)
+              c1.fill = SUMMARY_FILL; c1.font = WHITE_FONT; c1.border = BORDER; c1.alignment = LEFT
+              c2.border = BORDER; c2.alignment = LEFT
+              if label == 'Passing Classes': c2.fill = GREEN_FILL; c2.font = BOLD_FONT
+              elif label == 'Failing Classes': c2.fill = RED_FILL; c2.font = BOLD_FONT
+
+          headers    = ['#', 'Class Name', 'Covered Lines', 'Total Lines', 'Coverage %', 'Status']
+          col_widths = [5, 50, 16, 14, 14, 10]
+          for ws in [wb.create_sheet('Coverage Detail'), wb.create_sheet('Below Threshold')]:
+              for col, (h, w) in enumerate(zip(headers, col_widths), start=1):
+                  cell = ws.cell(1, col, h)
+                  cell.fill = HEADER_FILL; cell.font = WHITE_FONT; cell.alignment = CENTER; cell.border = BORDER
+                  ws.column_dimensions[get_column_letter(col)].width = w
+              ws.row_dimensions[1].height = 20
+
+          ws_detail = wb['Coverage Detail']
+          for idx, (name, covered, total, pct, status) in enumerate(all_rows, start=1):
+              row_fill    = GREEN_FILL if status == 'PASS' else (ORANGE_FILL if covered == 'N/A' else RED_FILL)
+              pct_display = f'{pct:.1f}%' if covered != 'N/A' else 'NO DATA'
+              for col, val in enumerate([idx, name, covered, total, pct_display, status], start=1):
+                  cell = ws_detail.cell(idx + 1, col, val)
+                  cell.fill = row_fill; cell.border = BORDER
+                  cell.alignment = CENTER if col != 2 else LEFT
+
+          ws_fail = wb['Below Threshold']
+          fail_all = fail_rows + no_data
+          if fail_all:
+              for idx, (name, covered, total, pct, status) in enumerate(fail_all, start=1):
+                  pct_display = f'{pct:.1f}%' if covered != 'N/A' else 'NO DATA'
+                  row_fill = ORANGE_FILL if covered == 'N/A' else RED_FILL
+                  for col, val in enumerate([idx, name, covered, total, pct_display, status], start=1):
+                      cell = ws_fail.cell(idx + 1, col, val)
+                      cell.fill = row_fill; cell.border = BORDER
+                      cell.alignment = CENTER if col != 2 else LEFT
+          else:
+              ws_fail.cell(2, 1, 'All classes meet the coverage threshold').font = Font(bold=True, color='375623')
+
+          xlsx_path = f'{sources_dir}/coverage-report-UAT_{ist_ts}.xlsx'
+          wb.save(xlsx_path)
+          print(f'Excel saved: {xlsx_path}')
+          PYEOF
+        displayName: "Generate Excel Coverage Report - UAT"
+        condition: always()
+        env:
+          REPORT_TIME_UAT: $(REPORT_TIME_UAT)
+          IST_TS_UAT:      $(IST_TS_UAT)
+
+      - task: PublishPipelineArtifact@1
+        displayName: "Publish Excel Coverage Report - UAT"
+        condition: always()
+        inputs:
+          targetPath: "$(Build.SourcesDirectory)/coverage-report-UAT_$(IST_TS_UAT).xlsx"
+          artifact:   "apex-coverage-report-UAT_$(IST_TS_UAT)"
+
+      - script: |
+          echo "=============================================="
+          echo "  UAT CLASSES BELOW 85% COVERAGE THRESHOLD"
+          echo "=============================================="
+          grep "FAIL" /tmp/coverage_raw_uat.txt || echo "None found or no data."
+          echo ""
+          cat /tmp/coverage_raw_uat.txt
+          if [[ "$(COVERAGE_EXIT_UAT)" != "0" ]]; then
+            echo "COVERAGE REPORT UAT: One or more classes below 85%."
+            exit 1
+          fi
+          echo "COVERAGE REPORT UAT: All classes meet 85% threshold."
+        displayName: "Print UAT Coverage Results & Enforce Threshold"
+
+      - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+        displayName: "JWT Key Cleanup - UAT"
         condition: always()
