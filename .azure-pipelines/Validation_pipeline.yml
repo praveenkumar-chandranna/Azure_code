@@ -37,6 +37,7 @@ pool:
 jobs:
   - job: Validation_Build
     displayName: "Validation Build"
+    timeoutInMinutes: 180
     steps:
       - checkout: self
         fetchDepth: 0

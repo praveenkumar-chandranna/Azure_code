@@ -61,6 +61,7 @@ jobs:
 
   - job: Pre_Validation_Build
     displayName: "Pre Validation Build"
+    timeoutInMinutes: 180
     dependsOn: check_source_branch
     condition: eq(dependencies.check_source_branch.outputs['verify.should_validate'], 'true')
     steps:

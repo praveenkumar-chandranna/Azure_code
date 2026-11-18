@@ -25,6 +25,7 @@ pool:
 jobs:
   - job: Deployment_Build
     displayName: "Deployment Build"
+    timeoutInMinutes: 180
     steps:
       - script: |
           ENVIRONMENT="${{ parameters.environment }}"
