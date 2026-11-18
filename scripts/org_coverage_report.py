@@ -9,13 +9,36 @@ Exit codes:
   2 - data / query error
 """
 
-import json, sys, os, subprocess, argparse, shutil
+import json, sys, os, subprocess, argparse, shutil, re, html, logging
+from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
 THRESHOLD  = 85
 CHUNK_SIZE = 100
+
+# Allowed characters for env/timestamp args to prevent path traversal
+_SAFE_ARG = re.compile(r'^[A-Za-z0-9_\-\.]+$')
+
+
+def _safe_arg(value, name):
+    """Reject CLI arg values containing path traversal or shell-unsafe characters."""
+    if not _SAFE_ARG.match(str(value)):
+        logging.error("Invalid value for --%s: %r", name, value)
+        sys.exit(2)
+    return value
+
+
+def _safe_output_dir(path):
+    """Resolve output_dir and ensure it is an existing absolute directory."""
+    resolved = Path(path).resolve()
+    if not resolved.is_dir():
+        logging.error("--output-dir does not exist or is not a directory: %s", resolved)
+        sys.exit(2)
+    return str(resolved)
 
 
 # ── Styles ────────────────────────────────────────────────────────────────────
@@ -42,7 +65,7 @@ def run_tooling_query(query, username):
     )
     try:
         data = json.loads(result.stdout)
-    except Exception:
+    except json.JSONDecodeError:
         print(f"ERROR: Could not parse CLI output:\n{result.stdout}\n{result.stderr}")
         sys.exit(2)
     if data.get("status") != 0:
@@ -126,28 +149,35 @@ def fetch_failed_tests(username):
     Returns list of dicts with keys: TestClass, Method, Message, StackTrace, LineNumber.
     """
     print("\nFetching failed test method details...")
-    records = run_tooling_query(
-        "SELECT ApexClass.Name, MethodName, Message, StackTrace "
-        "FROM ApexTestResult "
-        "WHERE Outcome = 'Fail' "
-        "ORDER BY ApexClass.Name, MethodName",
-        username
-    )
+    all_records = []
+    offset = 0
+    while True:
+        batch = run_tooling_query(
+            "SELECT ApexClass.Name, MethodName, Message, StackTrace "
+            "FROM ApexTestResult "
+            "WHERE Outcome = 'Fail' "
+            "ORDER BY ApexClass.Name, MethodName "
+            f"LIMIT 500 OFFSET {offset}",
+            username
+        )
+        all_records.extend(batch)
+        if len(batch) < 500:
+            break
+        offset += 500
     results = []
-    for r in records:
+    for r in all_records:
         class_name   = r.get("ApexClass", {}).get("Name", "Unknown")
         method       = r.get("MethodName", "")
         message      = r.get("Message",    "") or ""
         stack        = r.get("StackTrace", "") or ""
-        # extract line number from stack trace e.g. "Class.Foo.bar: line 42, column 1"
         line_num = ""
         for part in stack.split("\n"):
             if "line " in part:
                 try:
                     line_num = part.strip().split("line ")[1].split(",")[0].strip()
                     break
-                except Exception:
-                    pass
+                except (IndexError, AttributeError) as exc:
+                    logging.debug("Could not parse line number from stack trace part %r: %s", part, exc)
         results.append({
             "TestClass":   class_name,
             "Method":      method,
@@ -184,6 +214,8 @@ def build_rows(coverage_map):
 def generate_excel(pass_rows, fail_rows, env, report_time,
                    output_dir, timestamp, uncovered_map, failed_tests):
     all_rows = fail_rows + pass_rows
+    # output_dir already resolved + validated in main(); join with safe filename only
+    xlsx_path = Path(output_dir) / f"coverage-report-{env}_{timestamp}.xlsx"
     wb = Workbook()
 
     # ── Sheet 1: Summary ──────────────────────────────────────────────────────
@@ -269,30 +301,36 @@ def generate_excel(pass_rows, fail_rows, env, report_time,
     else:
         ws_ft.cell(2, 1, "No test failures found").font = Font(bold=True, color="375623")
 
-    xlsx_path = os.path.join(output_dir, f"coverage-report-{env}_{timestamp}.xlsx")
-    wb.save(xlsx_path)
+    wb.save(str(xlsx_path))
     print(f"\nExcel saved: {xlsx_path}")
-    return xlsx_path
+    return str(xlsx_path)
 
 
 def write_raw_log(pass_rows, fail_rows, env):
-    log_path = f"/tmp/coverage_raw_{env.lower()}.txt"
-    with open(log_path, "w") as f:
+    # env already validated as alphanumeric in main()
+    log_path = Path("/tmp") / f"coverage_raw_{env.lower()}.txt"
+    with open(str(log_path), "w") as f:
         for name, covered, total, pct, status in fail_rows + pass_rows:
             if covered == "N/A":
                 f.write(f"{name}  N/A  N/A  NO DATA  FAIL\n")
             else:
                 f.write(f"{name}  {covered}  {total}  {pct:.1f}%  {status}\n")
-    return log_path
+    return str(log_path)
 
 
 # ── Markdown summary ──────────────────────────────────────────────────────────
+def _md_escape(value):
+    """Escape value for safe inclusion in a markdown table cell."""
+    return html.escape(str(value)).replace("|", "&#124;").replace("\n", " ")
+
+
 def generate_markdown(pass_rows, fail_rows, env, report_time,
                       output_dir, uncovered_map, failed_tests):
-    md_path = os.path.join(output_dir, f"coverage-report-{env.lower()}.md")
-    with open(md_path, "w") as f:
-        f.write(f"## Apex Code Coverage Report - {env}\n\n")
-        f.write(f"**Run Time:** {report_time}  \n")
+    # output_dir already resolved + validated; env already validated as alphanumeric
+    md_path = Path(output_dir) / f"coverage-report-{env.lower()}.md"
+    with open(str(md_path), "w") as f:
+        f.write(f"## Apex Code Coverage Report - {_md_escape(env)}\n\n")
+        f.write(f"**Run Time:** {_md_escape(report_time)}  \n")
         f.write(f"**Threshold:** {THRESHOLD}%  \n")
         f.write(f"**Total Classes:** {len(pass_rows) + len(fail_rows)}  \n")
         f.write(f"**Passing:** {len(pass_rows)}  \n")
@@ -305,8 +343,8 @@ def generate_markdown(pass_rows, fail_rows, env, report_time,
             f.write("| Test Class | Method | Line | Error |\n")
             f.write("|---|---|---|---|\n")
             for ft in failed_tests:
-                msg = ft["Message"].replace("\n", " ").replace("|", "\\|")[:200]
-                f.write(f"| {ft['TestClass']} | {ft['Method']} | {ft['LineNumber']} | {msg} |\n")
+                msg = _md_escape(ft["Message"])[:200]
+                f.write(f"| {_md_escape(ft['TestClass'])} | {_md_escape(ft['Method'])} | {_md_escape(ft['LineNumber'])} | {msg} |\n")
             f.write("\n")
 
         # Classes below threshold
@@ -324,7 +362,7 @@ def generate_markdown(pass_rows, fail_rows, env, report_time,
                     unc_str += f" ... (+{len(unc)-20} more)"
                 if not unc_str:
                     unc_str = "N/A" if covered == "N/A" else "—"
-                f.write(f"| {name} | {cov_str} | {tot_str} | {pct_str} | {unc_str} |\n")
+                f.write(f"| {_md_escape(name)} | {cov_str} | {tot_str} | {pct_str} | {unc_str} |\n")
             f.write("\n")
 
         # Classes passing
@@ -333,8 +371,8 @@ def generate_markdown(pass_rows, fail_rows, env, report_time,
             f.write("| Class | Covered | Total | Coverage |\n")
             f.write("|---|---|---|---|\n")
             for name, covered, total, pct, _ in pass_rows:
-                f.write(f"| {name} | {covered} | {total} | {pct:.1f}% |\n")
-    return md_path
+                f.write(f"| {_md_escape(name)} | {covered} | {total} | {pct:.1f}% |\n")
+    return str(md_path)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -345,6 +383,11 @@ def main():
     parser.add_argument("--timestamp",  required=True)
     parser.add_argument("--output-dir", required=True, dest="output_dir")
     args = parser.parse_args()
+
+    # Validate args used in file paths to prevent path traversal
+    _safe_arg(args.env,       "env")
+    _safe_arg(args.timestamp, "timestamp")
+    output_dir = _safe_output_dir(args.output_dir)
 
     report_time = os.environ.get("REPORT_TIME") or ""
     if isinstance(report_time, list):
@@ -362,9 +405,9 @@ def main():
     failed_tests = fetch_failed_tests(args.username)
 
     generate_excel(pass_rows, fail_rows, args.env, report_time,
-                   args.output_dir, args.timestamp, uncovered_map, failed_tests)
+                   output_dir, args.timestamp, uncovered_map, failed_tests)
     md_path = generate_markdown(pass_rows, fail_rows, args.env, report_time,
-                                args.output_dir, uncovered_map, failed_tests)
+                                output_dir, uncovered_map, failed_tests)
     write_raw_log(pass_rows, fail_rows, args.env)
     print(f"Markdown saved: {md_path}")
 
