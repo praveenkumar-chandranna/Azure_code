@@ -56,7 +56,11 @@ BORDER       = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
 
 
 # ── Query helpers ─────────────────────────────────────────────────────────────
-def run_tooling_query(query, username):
+class QueryError(Exception):
+    pass
+
+
+def run_tooling_query(query, username, fatal=True):
     sf_path = shutil.which("sf") or "sf"
     result = subprocess.run(
         [sf_path, "data", "query", "--query", query,
@@ -66,11 +70,17 @@ def run_tooling_query(query, username):
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
-        print(f"ERROR: Could not parse CLI output:\n{result.stdout}\n{result.stderr}")
-        sys.exit(2)
+        msg = f"Could not parse CLI output:\n{result.stdout}\n{result.stderr}"
+        if fatal:
+            print(f"ERROR: {msg}")
+            sys.exit(2)
+        raise QueryError(msg)
     if data.get("status") != 0:
-        print(f"ERROR: SOQL query failed: {data.get('message', result.stderr)}")
-        sys.exit(2)
+        msg = data.get('message', result.stderr)
+        if fatal:
+            print(f"ERROR: SOQL query failed: {msg}")
+            sys.exit(2)
+        raise QueryError(msg)
     return data.get("result", {}).get("records", [])
 
 
@@ -152,14 +162,19 @@ def fetch_failed_tests(username):
     all_records = []
     offset = 0
     while True:
-        batch = run_tooling_query(
-            "SELECT ApexClass.Name, MethodName, Message, StackTrace "
-            "FROM ApexTestResult "
-            "WHERE Outcome = 'Fail' "
-            "ORDER BY ApexClass.Name, MethodName "
-            f"LIMIT 500 OFFSET {offset}",
-            username
-        )
+        try:
+            batch = run_tooling_query(
+                "SELECT ApexClass.Name, MethodName, Message, StackTrace "
+                "FROM ApexTestResult "
+                "WHERE Outcome = 'Fail' "
+                "ORDER BY ApexClass.Name, MethodName "
+                f"LIMIT 500 OFFSET {offset}",
+                username,
+                fatal=False
+            )
+        except QueryError as exc:
+            print(f"WARNING: Stopped paginating failed tests at offset {offset}: {exc}")
+            break
         all_records.extend(batch)
         if len(batch) < 500:
             break
@@ -328,7 +343,7 @@ def generate_markdown(pass_rows, fail_rows, env, report_time,
                       output_dir, uncovered_map, failed_tests):
     # output_dir already resolved + validated; env already validated as alphanumeric
     md_path = Path(output_dir) / f"coverage-report-{env.lower()}.md"
-    with open(str(md_path), "w") as f:
+    with open(str(md_path), "w", encoding="utf-8") as f:
         f.write(f"## Apex Code Coverage Report - {_md_escape(env)}\n\n")
         f.write(f"**Run Time:** {_md_escape(report_time)}  \n")
         f.write(f"**Threshold:** {THRESHOLD}%  \n")
@@ -339,7 +354,7 @@ def generate_markdown(pass_rows, fail_rows, env, report_time,
 
         # Failed test methods
         if failed_tests:
-            f.write("### ❌ Failed Test Methods\n\n")
+            f.write("### Failed Test Methods\n\n")
             f.write("| Test Class | Method | Line | Error |\n")
             f.write("|---|---|---|---|\n")
             for ft in failed_tests:
@@ -367,7 +382,7 @@ def generate_markdown(pass_rows, fail_rows, env, report_time,
 
         # Classes passing
         if pass_rows:
-            f.write(f"### ✅ Classes Meeting {THRESHOLD}%\n\n")
+            f.write(f"### Classes Meeting {THRESHOLD}%\n\n")
             f.write("| Class | Covered | Total | Coverage |\n")
             f.write("|---|---|---|---|\n")
             for name, covered, total, pct, _ in pass_rows:

@@ -67,10 +67,16 @@ jobs:
           sf data query \
             --query "SELECT Name FROM ApexClass WHERE IsTest = true ORDER BY Name" \
             --target-org "$(SFDX_AUTH_QA_USERNAME)" \
+            --use-tooling-api \
             --json > /tmp/qa_test_classes.json
-          jq -r '[.result.records[].Name] | join(" ")' /tmp/qa_test_classes.json \
-            > "$(Build.SourcesDirectory)/TestClass.txt"
-          echo "TestClass.txt updated: $(wc -w < $(Build.SourcesDirectory)/TestClass.txt) test classes"
+          if jq -e '.result.records' /tmp/qa_test_classes.json > /dev/null 2>&1; then
+            jq -r '[.result.records[].Name] | join(" ")' /tmp/qa_test_classes.json \
+              > "$(Build.SourcesDirectory)/TestClass.txt"
+            echo "TestClass.txt updated: $(wc -w < $(Build.SourcesDirectory)/TestClass.txt) test classes"
+          else
+            echo "WARNING: Could not parse test class list - jq error:"
+            cat /tmp/qa_test_classes.json
+          fi
         displayName: "Refresh TestClass.txt from QA Org"
 
       - script: |
@@ -202,10 +208,16 @@ jobs:
           sf data query \
             --query "SELECT Name FROM ApexClass WHERE IsTest = true ORDER BY Name" \
             --target-org "$(SFDX_AUTH_UAT_USERNAME)" \
+            --use-tooling-api \
             --json > /tmp/uat_test_classes.json
-          jq -r '[.result.records[].Name] | join(" ")' /tmp/uat_test_classes.json \
-            > "$(Build.SourcesDirectory)/TestClass.txt"
-          echo "TestClass.txt updated: $(wc -w < $(Build.SourcesDirectory)/TestClass.txt) test classes"
+          if jq -e '.result.records' /tmp/uat_test_classes.json > /dev/null 2>&1; then
+            jq -r '[.result.records[].Name] | join(" ")' /tmp/uat_test_classes.json \
+              > "$(Build.SourcesDirectory)/TestClass.txt"
+            echo "TestClass.txt updated: $(wc -w < $(Build.SourcesDirectory)/TestClass.txt) test classes"
+          else
+            echo "WARNING: Could not parse test class list - jq error:"
+            cat /tmp/uat_test_classes.json
+          fi
         displayName: "Refresh TestClass.txt from UAT Org"
 
       - script: |
