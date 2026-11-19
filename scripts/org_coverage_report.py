@@ -181,7 +181,7 @@ def fetch_failed_tests(username):
         offset += 500
     results = []
     for r in all_records:
-        class_name   = r.get("ApexClass", {}).get("Name", "Unknown")
+        class_name   = (r.get("ApexClass") or {}).get("Name", "Unknown")
         method       = r.get("MethodName", "")
         message      = r.get("Message",    "") or ""
         stack        = r.get("StackTrace", "") or ""

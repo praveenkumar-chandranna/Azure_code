@@ -87,6 +87,7 @@ jobs:
             --test-level RunLocalTests \
             --target-org "$(SFDX_AUTH_QA_USERNAME)" \
             --result-format human \
+            --code-coverage \
             --output-dir "$RESULTS_DIR" \
             --wait 120
           exit 0
@@ -228,6 +229,7 @@ jobs:
             --test-level RunLocalTests \
             --target-org "$(SFDX_AUTH_UAT_USERNAME)" \
             --result-format human \
+            --code-coverage \
             --output-dir "$RESULTS_DIR" \
             --wait 120
           exit 0
