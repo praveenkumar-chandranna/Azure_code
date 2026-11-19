@@ -164,10 +164,10 @@ def fetch_failed_tests(username):
     while True:
         try:
             batch = run_tooling_query(
-                "SELECT ApexClass.Name, MethodName, Message, StackTrace "
+                "SELECT ApexClass.Name, ApexClassName, MethodName, Message, StackTrace "
                 "FROM ApexTestResult "
                 "WHERE Outcome = 'Fail' "
-                "ORDER BY ApexClass.Name, MethodName "
+                "ORDER BY ApexClassName, MethodName "
                 f"LIMIT 500 OFFSET {offset}",
                 username,
                 fatal=False
@@ -181,7 +181,7 @@ def fetch_failed_tests(username):
         offset += 500
     results = []
     for r in all_records:
-        class_name   = (r.get("ApexClass") or {}).get("Name", "Unknown")
+        class_name   = (r.get("ApexClass") or {}).get("Name") or r.get("ApexClassName") or "Unknown"
         method       = r.get("MethodName", "")
         message      = r.get("Message",    "") or ""
         stack        = r.get("StackTrace", "") or ""
