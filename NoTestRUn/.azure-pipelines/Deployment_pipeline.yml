@@ -1,0 +1,578 @@
+trigger: none
+
+parameters:
+  - name: Feature_Branch
+    type: string
+    displayName: "Source branch to deploy from (e.g. Dev, QA, UAT, master)"
+  - name: environment
+    type: string
+    displayName: "Target deployment environment"
+    default: QA
+    values:
+      - QA
+      - UAT
+      - PROD
+  - name: Validation_Job_Id
+    type: string
+    displayName: "Salesforce Validation Job ID for Quick Deploy (enter 'none' for full delta deploy)"
+    default: "none"
+variables:
+  - group: RCPL-Salesforce-Secrets
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+  - job: Deployment_Build
+    displayName: "Deployment Build"
+    timeoutInMinutes: 180
+    steps:
+      - script: |
+          ENVIRONMENT="${{ parameters.environment }}"
+          SOURCE_BRANCH="${{ parameters.Feature_Branch }}"
+          VALIDATION_JOB_ID=$(echo "${{ parameters.Validation_Job_Id }}" | xargs)
+
+          case "$ENVIRONMENT" in
+            QA)
+              EXPECTED_SOURCE="Dev"
+              TARGET_BRANCH="QA"
+              ;;
+            UAT)
+              EXPECTED_SOURCE="QA"
+              TARGET_BRANCH="UAT"
+              ;;
+            PROD)
+              EXPECTED_SOURCE="UAT"
+              TARGET_BRANCH="master"
+              ;;
+            *)
+              echo "Unsupported environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+
+          if [[ "$SOURCE_BRANCH" != "$EXPECTED_SOURCE" ]]; then
+            echo "ERROR: Source branch '$SOURCE_BRANCH' is not valid for environment '$ENVIRONMENT'"
+            echo "Expected source: '$EXPECTED_SOURCE'"
+            exit 1
+          fi
+
+          echo "##vso[task.setvariable variable=ENVIRONMENT]$ENVIRONMENT"
+          echo "##vso[task.setvariable variable=SOURCE_BRANCH]$SOURCE_BRANCH"
+          echo "##vso[task.setvariable variable=TARGET_BRANCH]$TARGET_BRANCH"
+          if [[ "$ENVIRONMENT" == "QA" || "$ENVIRONMENT" == "UAT" ]]; then
+            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
+          else
+            echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+          fi
+
+          if [[ -n "$VALIDATION_JOB_ID" && "$VALIDATION_JOB_ID" != "none" ]]; then
+            echo "Quick Deploy mode - Validation Job ID: $VALIDATION_JOB_ID"
+            echo "##vso[task.setvariable variable=QUICK_DEPLOY]true"
+          else
+            echo "Full Delta Deploy mode"
+            echo "##vso[task.setvariable variable=QUICK_DEPLOY]false"
+          fi
+          echo "Delta: $SOURCE_BRANCH -> $TARGET_BRANCH ($ENVIRONMENT org)"
+        displayName: "Set Environment Variables"
+
+      - checkout: self
+        fetchDepth: 0
+        persistCredentials: true
+
+      - task: UseNode@1
+        displayName: "Setup Node.js 22"
+        inputs:
+          versionSource: 'spec'
+          version: '22.x'
+
+      - script: |
+          npm uninstall -g @salesforce/cli || true
+
+          npm install -g @salesforce/cli@latest
+
+          sf version
+        displayName: "Install Latest Salesforce CLI"
+
+      - task: DownloadSecureFile@1
+        name: jwtKey
+        displayName: "Download JWT Key Secure File"
+        inputs:
+          secureFile: "server.key"
+
+      - script: chmod 600 "$(jwtKey.secureFilePath)"
+        displayName: "Set JWT Key Permissions"
+
+      - script: |
+          case "$(ENVIRONMENT)" in
+            QA)
+              echo "##vso[task.setvariable variable=CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_QA)"
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_QA_USERNAME)"
+              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(SANDBOX_URL)"
+              ;;
+            UAT)
+              echo "##vso[task.setvariable variable=CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_UAT)"
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_UAT_USERNAME)"
+              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(SANDBOX_URL)"
+              ;;
+            PROD)
+              echo "##vso[task.setvariable variable=CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_PROD)"
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_PROD_USERNAME)"
+              echo "##vso[task.setvariable variable=SF_LOGIN_URL]$(LOGIN_URL)"
+              ;;
+          esac
+        displayName: "Set Org Credentials Based on Environment"
+
+      - script: sf org logout --all --no-prompt || true
+        displayName: "Clear Prior Salesforce Sessions"
+
+      - script: |
+          sf org login jwt \
+            --client-id "$(CLIENT_ID)" \
+            --jwt-key-file "$(jwtKey.secureFilePath)" \
+            --username "$(SF_USERNAME)" \
+            --instance-url "$(SF_LOGIN_URL)" \
+            --set-default
+        displayName: "Authenticate to Salesforce Org"
+
+      # ── Quick Deploy via Validation Job ID ─────────────────────────────────
+      - script: |
+          echo "=========================================="
+          echo "QUICK DEPLOY"
+          echo "Environment    : $(ENVIRONMENT)"
+          echo "Validation ID  : ${{ parameters.Validation_Job_Id }}"
+          echo "Target Org     : $(SF_USERNAME)"
+          echo "=========================================="
+          set +e
+          sf project deploy quick \
+            --job-id "${{ parameters.Validation_Job_Id }}" \
+            --target-org "$(SF_USERNAME)" \
+            --wait 120
+          DEPLOY_EXIT=${PIPESTATUS[0]}
+          set -e
+          [[ "$DEPLOY_EXIT" != "0" ]] && { echo "QUICK DEPLOY FAILED"; exit 1; }
+          echo "QUICK DEPLOY SUCCEEDED"
+        displayName: "Quick Deploy via Validation Job ID"
+        condition: ne('${{ parameters.Validation_Job_Id }}', 'none')
+
+      # ── Tag successful quick deployment ─────────────────────────────────────
+      - script: |
+          git config user.email "$(GIT_USER_EMAIL)"
+          git config user.name  "$(GIT_USER_NAME)"
+          git fetch --tags
+          TAG_NAME="DEPLOYED_$(ENVIRONMENT)_$(Build.BuildId)"
+          git tag -a "$TAG_NAME" -m "Successful $(ENVIRONMENT) quick deployment - Build $(Build.BuildId)" origin/$(TARGET_BRANCH)
+          git push origin "$TAG_NAME"
+          echo "Deployment tag created: $TAG_NAME"
+        displayName: "Tag Successful Quick Deployment"
+        condition: and(succeeded(), ne('${{ parameters.Validation_Job_Id }}', 'none'))
+
+      - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+        displayName: "JWT Key Cleanup (Quick Deploy)"
+        condition: and(always(), ne('${{ parameters.Validation_Job_Id }}', 'none'))
+
+      # ── Delta package generation from git diff ──────────────────────────────
+      - script: |
+          git fetch origin $(SOURCE_BRANCH):refs/remotes/origin/$(SOURCE_BRANCH)
+          git fetch origin $(TARGET_BRANCH):refs/remotes/origin/$(TARGET_BRANCH)
+          git fetch --tags
+          rm -f /tmp/changed_files.txt
+
+          # Last successful deployment tag for this environment (sorted by tag creation date)
+          LAST_SUCCESS_TAG=$(git tag -l "DEPLOYED_$(ENVIRONMENT)_*" --sort=-creatordate | head -1)
+
+          if [[ -n "$LAST_SUCCESS_TAG" ]]; then
+            LAST_SUCCESS_COMMIT=$(git rev-parse "$LAST_SUCCESS_TAG")
+            echo "Last successful deployment tag : $LAST_SUCCESS_TAG"
+            echo "Last successful deployment SHA : $LAST_SUCCESS_COMMIT"
+            CHANGED=$(git diff --name-only --diff-filter=ACMR "$LAST_SUCCESS_COMMIT" origin/$(TARGET_BRANCH) -- force-app/)
+            DIFF_FROM="$LAST_SUCCESS_COMMIT"
+            DIFF_TO="origin/$(TARGET_BRANCH)"
+          else
+            echo "No previous deployment tag found - using last merge commit diff"
+            MERGE_COMMIT=$(git log origin/$(TARGET_BRANCH) --merges --first-parent \
+              --grep="$(SOURCE_BRANCH)" --format="%H" -1 2>/dev/null)
+            if [[ -z "$MERGE_COMMIT" ]]; then
+              MERGE_COMMIT=$(git log origin/$(TARGET_BRANCH) --merges --first-parent \
+                --format="%H" -1 2>/dev/null)
+            fi
+            if [[ -z "$MERGE_COMMIT" ]]; then
+              echo "ERROR: No merge commit found on $(TARGET_BRANCH)"
+              exit 1
+            fi
+            echo "Last merge commit: $MERGE_COMMIT"
+            CHANGED=$(git diff --name-only --diff-filter=ACMR "${MERGE_COMMIT}^1" "${MERGE_COMMIT}" -- force-app/)
+            DIFF_FROM="${MERGE_COMMIT}^1"
+            DIFF_TO="${MERGE_COMMIT}"
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED"
+          if [[ -z "$CHANGED" ]]; then
+            echo "ERROR: No force-app/ changes detected - nothing to deploy"
+            exit 1
+          fi
+          echo "#BUILD_ID=$(Build.BuildId)" > /tmp/changed_files.txt
+          echo "$CHANGED" >> /tmp/changed_files.txt
+          echo "##vso[task.setvariable variable=DIFF_FROM]$DIFF_FROM"
+          echo "##vso[task.setvariable variable=DIFF_TO]$DIFF_TO"
+        displayName: "Compute Delta Changed Files"
+        condition: eq('${{ parameters.Validation_Job_Id }}', 'none')
+
+      - script: |
+          python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
+          if [[ $? -ne 0 ]]; then
+            echo "ERROR: gen_artifacts.py failed - no metadata found in delta"
+            exit 1
+          fi
+          MANIFEST="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_package.xml"
+          TC_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_TestClass.txt"
+          MC_PATH="$(Build.SourcesDirectory)/manifest/$(SOURCE_BRANCH)_MainClass.txt"
+          if [[ ! -f "$MANIFEST" ]]; then
+            echo "ERROR: Package manifest not generated: $MANIFEST"
+            exit 1
+          fi
+          echo "##vso[task.setvariable variable=MANIFEST_PATH]$MANIFEST"
+          echo "##vso[task.setvariable variable=TC_PATH]$TC_PATH"
+          echo "##vso[task.setvariable variable=MC_PATH]$MC_PATH"
+        displayName: "Generate Delta package.xml & TestClass.txt"
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
+        env:
+          FEATURE_BRANCH: $(SOURCE_BRANCH)
+          BUILD_SOURCES:  $(Build.SourcesDirectory)
+          API_VERSION:    "67.0"
+          DIFF_FROM:      $(DIFF_FROM)
+          DIFF_TO:        $(DIFF_TO)
+
+      - script: |
+          HAS_MAIN=$([ -f "$(MC_PATH)" ] && [ -s "$(MC_PATH)" ] && echo "true" || echo "false")
+          HAS_TEST=$([ -f "$(TC_PATH)" ] && [ -s "$(TC_PATH)" ] && echo "true" || echo "false")
+          HAS_APEX=$(grep -cE '<name>(ApexClass|ApexTrigger)</name>' "$(MANIFEST_PATH)" 2>/dev/null; true)
+
+          if [[ "$(ENVIRONMENT)" == "QA" || "$(ENVIRONMENT)" == "UAT" ]]; then
+            echo "Target is $(ENVIRONMENT) - bypassing test run (NoTestRun)"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]"
+
+          elif [[ "$HAS_APEX" -eq 0 ]]; then
+            # No Apex in delta - NoTestRun for all environments
+            echo "No Apex in delta - setting NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]"
+
+          elif [[ "$HAS_MAIN" == "true" && "$HAS_TEST" == "true" ]]; then
+            # Main + test class both in delta
+            TEST_CLASSES=$(paste -sd ' ' "$(TC_PATH)")
+            echo "Main + test in delta - RunSpecifiedTests: $TEST_CLASSES"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+
+          elif [[ "$HAS_MAIN" == "true" && "$HAS_TEST" == "false" ]]; then
+            # Main class only - search repo for matching test class
+            echo "Main class in delta but no test class - searching repo..."
+            FOUND_TESTS=""
+            CLASSES_DIR="$(Build.SourcesDirectory)/force-app/main/default/classes"
+            while IFS= read -r main_class; do
+              echo "Searching for test referencing: $main_class"
+              MATCH=$(grep -rl "$main_class" "$CLASSES_DIR" --include="*.cls" 2>/dev/null | while read -r f; do
+                if grep -qiE '@isTest' "$f"; then basename "$f" .cls; fi
+              done | tr '\n' ' ')
+              [[ -n "$MATCH" ]] && FOUND_TESTS="$FOUND_TESTS $MATCH"
+            done < "$(MC_PATH)"
+            FOUND_TESTS=$(echo "$FOUND_TESTS" | xargs)
+            if [[ -n "$FOUND_TESTS" ]]; then
+              echo "Found test classes: $FOUND_TESTS - RunSpecifiedTests"
+              echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+              echo "##vso[task.setvariable variable=TEST_CLASSES]$FOUND_TESTS"
+            elif [[ "$(ENVIRONMENT)" == "PROD" ]]; then
+              echo "No test class found in repo - PROD falling back to RunLocalTests"
+              echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+              echo "##vso[task.setvariable variable=TEST_CLASSES]"
+            else
+              echo "ERROR: Main class exists in delta but no test class found in repo."
+              echo "Please create a test class for the main class before deploying."
+              exit 1
+            fi
+
+          elif [[ "$HAS_MAIN" == "false" && "$HAS_TEST" == "true" ]]; then
+            # Only test class in delta - run that test class directly
+            TEST_CLASSES=$(paste -sd ' ' "$(TC_PATH)")
+            echo "Only test class in delta - RunSpecifiedTests: $TEST_CLASSES"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+
+          else
+            echo "No main or test class in delta - setting NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]"
+          fi
+        displayName: "Resolve Test Classes from Delta"
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
+
+      - script: |
+          echo "=========================================="
+          echo "Manifest : $(MANIFEST_PATH)"
+          echo "TestLevel: $(TEST_LEVEL)"
+          echo "Classes  : $(TEST_CLASSES)"
+          echo "=========================================="
+          echo "package.xml contents:"
+          cat "$(MANIFEST_PATH)"
+        displayName: "Display package.xml & Deployment Configuration"
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
+
+      - script: |
+          sf plugins install @salesforce/plugin-code-analyzer@latest
+        displayName: "Install Salesforce Code Analyzer Plugin"
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
+
+      - script: |
+          sf code-analyzer run \
+            --target "$(Build.SourcesDirectory)/force-app" \
+            --output-file "$(Build.SourcesDirectory)/scanner-results.json" \
+            --output-file "$(Build.SourcesDirectory)/scanner-results.html" || true
+        displayName: "Run Salesforce Code Analyzer (Full Scan)"
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
+
+      - script: |
+          if [[ ! -f "$(Build.SourcesDirectory)/scanner-results.json" ]]; then
+            echo "No scanner results found - skipping"
+            exit 0
+          fi
+          IST_TIME=$(TZ='Asia/Kolkata' date +'%d-%m-%Y %H:%M:%S IST')
+
+          JSON="$(Build.SourcesDirectory)/scanner-results.json"
+
+          # Write jq filters to temp files (handles both v3 array and v4 {violations:[]} formats)
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s <= 3) | "[SEV-"+($s|tostring)+"] "+$f+":"+($l|tostring)+" - "+($v.rule // $v.ruleName // "")+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))' > /tmp/jq_fail_log.jq
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s > 3) | "[SEV-"+($s|tostring)+"] "+$f+":"+($l|tostring)+" - "+($v.rule // $v.ruleName // "")+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))' > /tmp/jq_warn_log.jq
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s <= 3) | "| "+$f+" | "+($s|tostring)+" | "+($l|tostring)+" | "+($v.rule // $v.ruleName // "")+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))+" |"' > /tmp/jq_fail_table.jq
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s > 3) | "| "+$f+" | "+($s|tostring)+" | "+($l|tostring)+" | "+($v.rule // $v.ruleName // "")+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))+" |"' > /tmp/jq_warn_table.jq
+
+          SEV1=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. == 1)] | length' "$JSON" 2>/dev/null || echo 0)
+          SEV2=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. == 2)] | length' "$JSON" 2>/dev/null || echo 0)
+          SEV3=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. == 3)] | length' "$JSON" 2>/dev/null || echo 0)
+          LOW_INFO=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. > 3)] | length' "$JSON" 2>/dev/null || echo 0)
+
+          echo "===== Code Analyzer Results (${IST_TIME}) ====="
+          echo "Severity 1 (Critical) : $SEV1 violations (threshold: 0)"
+          echo "Severity 2 (High)     : $SEV2 violations (threshold: 5)"
+          echo "Severity 3 (Moderate) : $SEV3 violations (threshold: 10)"
+          echo "Severity 4-5 (Low/Info): $LOW_INFO violations (WARN only)"
+          echo ""
+          echo "===== Severity 1-3 Violations (FAIL) ====="
+          jq -rf /tmp/jq_fail_log.jq "$JSON" 2>/dev/null || true
+          echo ""
+          echo "===== Severity 4-5 Violations (WARN) ====="
+          jq -rf /tmp/jq_warn_log.jq "$JSON" 2>/dev/null || true
+
+          # Build summary markdown
+          SUMMARY="$(Build.SourcesDirectory)/scanner-summary.md"
+          [[ "$SEV1" -gt 0  ]] && S1="FAIL" || S1="OK"
+          [[ "$SEV2" -gt 5  ]] && S2="FAIL" || S2="OK"
+          [[ "$SEV3" -gt 10 ]] && S3="FAIL" || S3="OK"
+          FAIL_COUNT=$(( SEV1 + SEV2 + SEV3 ))
+          {
+            echo "## Salesforce Code Analyzer Results"
+            echo ""
+            echo "**Run Time:** ${IST_TIME}"
+            echo ""
+            echo "| Severity | Count | Threshold | Status |"
+            echo "|---|---|---|---|"
+            echo "| Severity 1 - Critical | $SEV1 | 0 | $S1 |"
+            echo "| Severity 2 - High | $SEV2 | 5 | $S2 |"
+            echo "| Severity 3 - Moderate | $SEV3 | 10 | $S3 |"
+            echo "| Severity 4-5 - Low/Info | $LOW_INFO | WARN only | OK |"
+            echo ""
+            echo "### Severity 1-3 Violations"
+            if [[ "$FAIL_COUNT" -gt 0 ]]; then
+              echo "| Class | Severity | Line | Rule | Message |"
+              echo "|---|---|---|---|---|"
+              jq -rf /tmp/jq_fail_table.jq "$JSON" 2>/dev/null
+            else
+              echo "_No violations found._"
+            fi
+            echo ""
+            echo "### Severity 4-5 Violations (WARN)"
+            if [[ "$LOW_INFO" -gt 0 ]]; then
+              echo "| Class | Severity | Line | Rule | Message |"
+              echo "|---|---|---|---|---|"
+              jq -rf /tmp/jq_warn_table.jq "$JSON" 2>/dev/null
+            else
+              echo "_No violations found._"
+            fi
+          } > "$SUMMARY"
+          echo "##vso[task.uploadsummary]$SUMMARY"
+
+          # Prepend IST timestamp to published HTML
+          HTML="$(Build.SourcesDirectory)/scanner-results.html"
+          if [[ -f "$HTML" ]]; then
+            sed -i "s|<body>|<body><p style='font-family:sans-serif;padding:8px;background:#f0f0f0'><strong>Scan Time (IST):</strong> ${IST_TIME}</p>|" "$HTML" || true
+          fi
+
+          FAILED=0
+          [[ "$SEV1" -gt 0  ]] && { echo "FAIL: Severity 1 count $SEV1 exceeds threshold of 0";  FAILED=1; }
+          [[ "$SEV2" -gt 5  ]] && { echo "FAIL: Severity 2 count $SEV2 exceeds threshold of 5";  FAILED=1; }
+          [[ "$SEV3" -gt 10 ]] && { echo "FAIL: Severity 3 count $SEV3 exceeds threshold of 10"; FAILED=1; }
+          if [[ "$FAILED" -eq 1 ]]; then
+            echo "PIPELINE FAILED: Violation count exceeded threshold. Fix before deploying."
+            exit 1
+          fi
+          echo "Code analysis passed - all violation counts within thresholds."
+        displayName: "Enforce Severity Thresholds (Fail on 1-3, Warn on 4-5)"
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
+
+      - script: |
+          IST_TS=$(TZ='Asia/Kolkata' date +'%d%m%Y_%H%M%S')
+          echo "##vso[task.setvariable variable=SCAN_TS]$IST_TS"
+        displayName: "Set Artifact Timestamp"
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
+
+      - task: PublishPipelineArtifact@1
+        displayName: "Publish Code Analyzer Results"
+        condition: and(always(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
+        inputs:
+          targetPath: "$(Build.SourcesDirectory)/scanner-results.html"
+          artifact: "code-analyzer-results_$(SCAN_TS)"
+
+      # ── Validate delta package ──────────────────────────────────────────────
+      # - script: |
+      #     set +e
+      #     RESULTS_DIR="$(Build.SourcesDirectory)/test-results"
+      #     mkdir -p "$RESULTS_DIR"
+      #     CMD=(sf project deploy start \
+      #       --dry-run \
+      #       --manifest "$(MANIFEST_PATH)" \
+      #       --target-org "$(SF_USERNAME)" \
+      #       --test-level "$(TEST_LEVEL)" \
+      #       --wait 30 \
+      #       --ignore-warnings \
+      #       --verbose)
+      #     if [[ "$(TEST_LEVEL)" != "NoTestRun" ]]; then
+      #       CMD+=(--coverage-formatters json --results-dir "$RESULTS_DIR")
+      #     fi
+      #     if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]]; then
+      #       CMD+=(--tests $(TEST_CLASSES))
+      #     fi
+      #     echo "Running: ${CMD[@]}"
+      #     "${CMD[@]}"
+      #     VALIDATE_EXIT=${PIPESTATUS[0]}
+      #     set -e
+      #     [[ "$VALIDATE_EXIT" != "0" ]] && { echo "VALIDATION FAILED"; exit 1; }
+      #     echo "VALIDATION PASSED"
+      #   displayName: "Validate Delta Deployment"
+
+      # ── Coverage check post-validation (reads from local results dir) ───────
+      # - script: |
+      #     APEX_CLASSES=""
+      #     if [[ -f "$(MC_PATH)" && -s "$(MC_PATH)" ]]; then
+      #       APEX_CLASSES=$(paste -sd ',' "$(MC_PATH)")
+      #     fi
+      #     if [[ -z "$APEX_CLASSES" ]]; then
+      #       echo "No main classes in delta - skipping coverage check"
+      #       exit 0
+      #     fi
+      #     echo "Checking coverage for: $APEX_CLASSES"
+      #     python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+      #       --mode local \
+      #       --results-dir "$(Build.SourcesDirectory)/test-results" \
+      #       --classes "$APEX_CLASSES"
+      #   displayName: "Check 85% Per-Class Coverage (Post-Validation)"
+      #   condition: and(succeeded(), ne(variables['TEST_LEVEL'], 'NoTestRun'))
+
+      # ── Deploy delta package ────────────────────────────────────────────────
+      - script: |
+          set +e
+          RESULTS_DIR="$(Build.SourcesDirectory)/test-results"
+          mkdir -p "$RESULTS_DIR"
+          CMD=(sf project deploy start \
+            --manifest "$(MANIFEST_PATH)" \
+            --target-org "$(SF_USERNAME)" \
+            --test-level "$(TEST_LEVEL)" \
+            --wait 120 \
+            --ignore-conflicts)
+          if [[ "$(TEST_LEVEL)" != "NoTestRun" ]]; then
+            CMD+=(--coverage-formatters json --results-dir "$RESULTS_DIR")
+          fi
+          if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" && -n "$(TEST_CLASSES)" ]]; then
+            CMD+=(--tests $(TEST_CLASSES))
+          fi
+          echo "Running: ${CMD[@]}"
+          "${CMD[@]}"
+          DEPLOY_EXIT=${PIPESTATUS[0]}
+          set -e
+          [[ "$DEPLOY_EXIT" != "0" ]] && { echo "DEPLOYMENT FAILED"; exit 1; }
+          echo "DEPLOYMENT SUCCEEDED"
+        displayName: "Deploy Delta to Salesforce Org"
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
+
+      # ── Tag successful deployment immediately after deploy ─────────────────
+      - script: |
+          git config user.email "$(GIT_USER_EMAIL)"
+          git config user.name  "$(GIT_USER_NAME)"
+          git fetch --tags
+          TAG_NAME="DEPLOYED_$(ENVIRONMENT)_$(Build.BuildId)"
+          git tag -a "$TAG_NAME" -m "Successful $(ENVIRONMENT) deployment - Build $(Build.BuildId)" origin/$(TARGET_BRANCH)
+          git push origin "$TAG_NAME"
+          echo "Deployment tag created: $TAG_NAME"
+        displayName: "Tag Successful Deployment"
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'))
+
+      # ── Coverage check post-deployment ───────────────────────────────────
+      - script: |
+          APEX_CLASSES=""
+          if [[ -f "$(MC_PATH)" && -s "$(MC_PATH)" ]]; then
+            APEX_CLASSES=$(paste -sd ',' "$(MC_PATH)")
+          fi
+          if [[ -z "$APEX_CLASSES" ]]; then
+            echo "No main classes in delta - skipping coverage check"
+            exit 0
+          fi
+          echo "Checking coverage for: $APEX_CLASSES"
+          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+            --mode local \
+            --results-dir "$(Build.SourcesDirectory)/test-results" \
+            --classes "$APEX_CLASSES"
+        displayName: "Check 85% Per-Class Coverage (Post-Deployment)"
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'), ne(variables['TEST_LEVEL'], 'NoTestRun'))
+
+      - script: |
+          DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+          git config user.email "$(GIT_USER_EMAIL)"
+          git config user.name  "$(GIT_USER_NAME)"
+          EXISTING=$(git tag -l "PROD_*" | sort -V | tail -1)
+          if [[ -z "$EXISTING" ]]; then
+            NEXT_VERSION="v0.1"
+          else
+            LAST_MINOR=$(echo "$EXISTING" | grep -oP '(?<=_v0\.)[0-9]+')
+            NEXT_MINOR=$((LAST_MINOR + 1))
+            NEXT_VERSION="v0.${NEXT_MINOR}"
+          fi
+          TAG_NAME="PROD_${DATE_SUFFIX}_${NEXT_VERSION}"
+          git tag -a "$TAG_NAME" -m "PROD deployment ${NEXT_VERSION} on $(TZ='Asia/Kolkata' date +'%d-%m-%Y') via Azure DevOps"
+          git push origin "$TAG_NAME"
+          echo "Tag created: $TAG_NAME"
+        displayName: "Create PROD Deployment Tag"
+        condition: and(succeeded(), eq('${{ parameters.Validation_Job_Id }}', 'none'), eq('${{ parameters.environment }}', 'PROD'))
+
+      - script: |
+          DATE_SUFFIX=$(TZ='Asia/Kolkata' date +'%d_%m_%Y')
+          git config user.email "$(GIT_USER_EMAIL)"
+          git config user.name  "$(GIT_USER_NAME)"
+          EXISTING=$(git tag -l "PROD_*" | sort -V | tail -1)
+          if [[ -z "$EXISTING" ]]; then
+            NEXT_VERSION="v0.1"
+          else
+            LAST_MINOR=$(echo "$EXISTING" | grep -oP '(?<=_v0\.)[0-9]+')
+            NEXT_MINOR=$((LAST_MINOR + 1))
+            NEXT_VERSION="v0.${NEXT_MINOR}"
+          fi
+          TAG_NAME="PROD_${DATE_SUFFIX}_${NEXT_VERSION}"
+          git tag -a "$TAG_NAME" -m "PROD quick deployment ${NEXT_VERSION} on $(TZ='Asia/Kolkata' date +'%d-%m-%Y') via Azure DevOps"
+          git push origin "$TAG_NAME"
+          echo "Tag created: $TAG_NAME"
+        displayName: "Create PROD Deployment Tag (Quick Deploy)"
+        condition: and(succeeded(), ne('${{ parameters.Validation_Job_Id }}', 'none'), eq('${{ parameters.environment }}', 'PROD'))
+
+      - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+        displayName: "JWT Key Cleanup"
+        condition: and(always(), eq('${{ parameters.Validation_Job_Id }}', 'none'))

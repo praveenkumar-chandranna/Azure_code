@@ -1,0 +1,303 @@
+name: RCPL Org Coverage Report
+
+schedules:
+  - cron: "30 22 * * *"
+    displayName: "Daily 4:00 AM IST - Org Coverage Report"
+    branches:
+      include:
+        - QA
+        - UAT
+    always: true
+
+trigger: none
+
+variables:
+  - group: RCPL-Salesforce-Secrets
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+
+# ── JOB 1: QA branch -> QA org ─────────────────────────────────────────────
+  - job: Coverage_QA
+    displayName: "QA Branch - Run Tests & Coverage Report"
+    timeoutInMinutes: 180
+    condition: eq(variables['Build.SourceBranchName'], 'QA')
+    steps:
+      - checkout: self
+        fetchDepth: 0
+
+      - task: UseNode@1
+        displayName: "Setup Node.js 22"
+        inputs:
+          versionSource: spec
+          version: "22.x"
+
+      - script: |
+          npm install -g @salesforce/cli@latest
+          sf version
+        displayName: "Install Salesforce CLI"
+
+      - script: pip install openpyxl --quiet
+        displayName: "Install Python Dependencies"
+
+      - task: DownloadSecureFile@1
+        name: jwtKey
+        displayName: "Download JWT Key"
+        inputs:
+          secureFile: "server.key"
+
+      - script: chmod 600 "$(jwtKey.secureFilePath)"
+        displayName: "Set JWT Key Permissions"
+
+      - script: sf org logout --all --no-prompt || true
+        displayName: "Clear Prior Sessions"
+
+      - script: |
+          sf org login jwt \
+            --client-id "$(SALESFORCE_CONSUMER_KEY_QA)" \
+            --jwt-key-file "$(jwtKey.secureFilePath)" \
+            --username "$(SFDX_AUTH_QA_USERNAME)" \
+            --instance-url "$(SANDBOX_URL)" \
+            --set-default
+        displayName: "Authenticate to QA Org"
+
+      - script: |
+          sf data query \
+            --query "SELECT Name FROM ApexClass WHERE IsTest = true ORDER BY Name" \
+            --target-org "$(SFDX_AUTH_QA_USERNAME)" \
+            --use-tooling-api \
+            --json > /tmp/qa_test_classes.json
+          if jq -e '.result.records' /tmp/qa_test_classes.json > /dev/null 2>&1; then
+            jq -r '[.result.records[].Name] | join(" ")' /tmp/qa_test_classes.json \
+              > "$(Build.SourcesDirectory)/TestClass.txt"
+            echo "TestClass.txt updated: $(wc -w < $(Build.SourcesDirectory)/TestClass.txt) test classes"
+          else
+            echo "WARNING: Could not parse test class list - jq error:"
+            cat /tmp/qa_test_classes.json
+          fi
+        displayName: "Refresh TestClass.txt from QA Org"
+
+      - script: |
+          set +e
+          RESULTS_DIR="$(Build.SourcesDirectory)/test-results-qa"
+          mkdir -p "$RESULTS_DIR"
+          sf apex run test \
+            --test-level RunLocalTests \
+            --target-org "$(SFDX_AUTH_QA_USERNAME)" \
+            --result-format human \
+            --code-coverage \
+            --output-dir "$RESULTS_DIR" \
+            --wait 120
+          exit 0
+        displayName: "Run All Tests in QA Org (RunLocalTests)"
+
+      - script: |
+          IST_TIME=$(TZ='Asia/Kolkata' date +'%d-%m-%Y %H:%M:%S IST')
+          IST_TS=$(TZ='Asia/Kolkata' date +'%d%m%Y_%H%M%S')
+          echo "##vso[task.setvariable variable=IST_TIME_QA]$IST_TIME"
+          echo "##vso[task.setvariable variable=IST_TS_QA]$IST_TS"
+        displayName: "Set Timestamp - QA"
+
+      - bash: |
+          set +e
+          python3 "$(Build.SourcesDirectory)/scripts/org_coverage_report.py" \
+            --username   "$(SFDX_AUTH_QA_USERNAME)" \
+            --env        "QA" \
+            --timestamp  "$(IST_TS_QA)" \
+            --output-dir "$(Build.SourcesDirectory)"
+          COVERAGE_EXIT=$?
+          echo "##vso[task.setvariable variable=COVERAGE_EXIT_QA]$COVERAGE_EXIT"
+          XLSX="$(Build.SourcesDirectory)/coverage-report-QA_$(IST_TS_QA).xlsx"
+          MD="$(Build.SourcesDirectory)/coverage-report-qa.md"
+          [[ -f "$XLSX" ]] && echo "##vso[task.setvariable variable=XLSX_EXISTS_QA]true" || echo "##vso[task.setvariable variable=XLSX_EXISTS_QA]false"
+          [[ -f "$MD"   ]] && echo "##vso[task.setvariable variable=MD_EXISTS_QA]true"   || echo "##vso[task.setvariable variable=MD_EXISTS_QA]false"
+          echo "--- Output files ---"
+          ls -lh "$(Build.SourcesDirectory)/coverage-report-"* 2>/dev/null || echo "No coverage report files found"
+          exit 0
+        displayName: "Run Coverage Report - QA"
+        env:
+          REPORT_TIME: $(IST_TIME_QA)
+
+      - script: |
+          MD="$(Build.SourcesDirectory)/coverage-report-qa.md"
+          if [[ -f "$MD" ]]; then
+            echo "##vso[task.uploadsummary]$MD"
+          else
+            echo "WARNING: Markdown file not found at $MD - skipping summary upload"
+          fi
+        displayName: "Publish Markdown Summary - QA"
+        condition: always()
+
+      - task: PublishPipelineArtifact@1
+        displayName: "Publish Excel Coverage Report - QA"
+        condition: and(always(), eq(variables['XLSX_EXISTS_QA'], 'true'))
+        inputs:
+          targetPath: "$(Build.SourcesDirectory)/coverage-report-QA_$(IST_TS_QA).xlsx"
+          artifact:   "apex-coverage-report-QA_$(IST_TS_QA)"
+
+      - script: |
+          echo "=============================================="
+          echo "  QA CLASSES BELOW 85% COVERAGE THRESHOLD"
+          echo "=============================================="
+          if [[ -f /tmp/coverage_raw_qa.txt ]]; then
+            grep "FAIL" /tmp/coverage_raw_qa.txt || echo "None found."
+          else
+            echo "WARNING: coverage_raw_qa.txt not found - coverage report may have failed"
+          fi
+          if [[ "$(COVERAGE_EXIT_QA)" == "1" ]]; then
+            echo "COVERAGE REPORT QA: One or more classes below 85%."
+            exit 1
+          elif [[ "$(COVERAGE_EXIT_QA)" == "2" ]]; then
+            echo "COVERAGE REPORT QA: Script error - check Run Coverage Report step logs."
+            exit 1
+          fi
+          echo "COVERAGE REPORT QA: All classes meet 85% threshold."
+        displayName: "Enforce Threshold - QA"
+
+      - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+        displayName: "JWT Key Cleanup - QA"
+        condition: always()
+
+
+# ── JOB 2: UAT branch -> UAT org ───────────────────────────────────────────
+  - job: Coverage_UAT
+    displayName: "UAT Branch - Run Tests & Coverage Report"
+    timeoutInMinutes: 180
+    condition: eq(variables['Build.SourceBranchName'], 'UAT')
+    steps:
+      - checkout: self
+        fetchDepth: 0
+
+      - task: UseNode@1
+        displayName: "Setup Node.js 22"
+        inputs:
+          versionSource: spec
+          version: "22.x"
+
+      - script: |
+          npm install -g @salesforce/cli@latest
+          sf version
+        displayName: "Install Salesforce CLI"
+
+      - script: pip install openpyxl --quiet
+        displayName: "Install Python Dependencies"
+
+      - task: DownloadSecureFile@1
+        name: jwtKey
+        displayName: "Download JWT Key"
+        inputs:
+          secureFile: "server.key"
+
+      - script: chmod 600 "$(jwtKey.secureFilePath)"
+        displayName: "Set JWT Key Permissions"
+
+      - script: sf org logout --all --no-prompt || true
+        displayName: "Clear Prior Sessions"
+
+      - script: |
+          sf org login jwt \
+            --client-id "$(SALESFORCE_CONSUMER_KEY_UAT)" \
+            --jwt-key-file "$(jwtKey.secureFilePath)" \
+            --username "$(SFDX_AUTH_UAT_USERNAME)" \
+            --instance-url "$(SANDBOX_URL)" \
+            --set-default
+        displayName: "Authenticate to UAT Org"
+
+      - script: |
+          sf data query \
+            --query "SELECT Name FROM ApexClass WHERE IsTest = true ORDER BY Name" \
+            --target-org "$(SFDX_AUTH_UAT_USERNAME)" \
+            --use-tooling-api \
+            --json > /tmp/uat_test_classes.json
+          if jq -e '.result.records' /tmp/uat_test_classes.json > /dev/null 2>&1; then
+            jq -r '[.result.records[].Name] | join(" ")' /tmp/uat_test_classes.json \
+              > "$(Build.SourcesDirectory)/TestClass.txt"
+            echo "TestClass.txt updated: $(wc -w < $(Build.SourcesDirectory)/TestClass.txt) test classes"
+          else
+            echo "WARNING: Could not parse test class list - jq error:"
+            cat /tmp/uat_test_classes.json
+          fi
+        displayName: "Refresh TestClass.txt from UAT Org"
+
+      - script: |
+          set +e
+          RESULTS_DIR="$(Build.SourcesDirectory)/test-results-uat"
+          mkdir -p "$RESULTS_DIR"
+          sf apex run test \
+            --test-level RunLocalTests \
+            --target-org "$(SFDX_AUTH_UAT_USERNAME)" \
+            --result-format human \
+            --code-coverage \
+            --output-dir "$RESULTS_DIR" \
+            --wait 120
+          exit 0
+        displayName: "Run All Tests in UAT Org (RunLocalTests)"
+
+      - script: |
+          IST_TIME=$(TZ='Asia/Kolkata' date +'%d-%m-%Y %H:%M:%S IST')
+          IST_TS=$(TZ='Asia/Kolkata' date +'%d%m%Y_%H%M%S')
+          echo "##vso[task.setvariable variable=IST_TIME_UAT]$IST_TIME"
+          echo "##vso[task.setvariable variable=IST_TS_UAT]$IST_TS"
+        displayName: "Set Timestamp - UAT"
+
+      - bash: |
+          set +e
+          python3 "$(Build.SourcesDirectory)/scripts/org_coverage_report.py" \
+            --username   "$(SFDX_AUTH_UAT_USERNAME)" \
+            --env        "UAT" \
+            --timestamp  "$(IST_TS_UAT)" \
+            --output-dir "$(Build.SourcesDirectory)"
+          COVERAGE_EXIT=$?
+          echo "##vso[task.setvariable variable=COVERAGE_EXIT_UAT]$COVERAGE_EXIT"
+          XLSX="$(Build.SourcesDirectory)/coverage-report-UAT_$(IST_TS_UAT).xlsx"
+          MD="$(Build.SourcesDirectory)/coverage-report-uat.md"
+          [[ -f "$XLSX" ]] && echo "##vso[task.setvariable variable=XLSX_EXISTS_UAT]true" || echo "##vso[task.setvariable variable=XLSX_EXISTS_UAT]false"
+          [[ -f "$MD"   ]] && echo "##vso[task.setvariable variable=MD_EXISTS_UAT]true"   || echo "##vso[task.setvariable variable=MD_EXISTS_UAT]false"
+          echo "--- Output files ---"
+          ls -lh "$(Build.SourcesDirectory)/coverage-report-"* 2>/dev/null || echo "No coverage report files found"
+          exit 0
+        displayName: "Run Coverage Report - UAT"
+        env:
+          REPORT_TIME: $(IST_TIME_UAT)
+
+      - script: |
+          MD="$(Build.SourcesDirectory)/coverage-report-uat.md"
+          if [[ -f "$MD" ]]; then
+            echo "##vso[task.uploadsummary]$MD"
+          else
+            echo "WARNING: Markdown file not found at $MD - skipping summary upload"
+          fi
+        displayName: "Publish Markdown Summary - UAT"
+        condition: always()
+
+      - task: PublishPipelineArtifact@1
+        displayName: "Publish Excel Coverage Report - UAT"
+        condition: and(always(), eq(variables['XLSX_EXISTS_UAT'], 'true'))
+        inputs:
+          targetPath: "$(Build.SourcesDirectory)/coverage-report-UAT_$(IST_TS_UAT).xlsx"
+          artifact:   "apex-coverage-report-UAT_$(IST_TS_UAT)"
+
+      - script: |
+          echo "=============================================="
+          echo "  UAT CLASSES BELOW 85% COVERAGE THRESHOLD"
+          echo "=============================================="
+          if [[ -f /tmp/coverage_raw_uat.txt ]]; then
+            grep "FAIL" /tmp/coverage_raw_uat.txt || echo "None found."
+          else
+            echo "WARNING: coverage_raw_uat.txt not found - coverage report may have failed"
+          fi
+          if [[ "$(COVERAGE_EXIT_UAT)" == "1" ]]; then
+            echo "COVERAGE REPORT UAT: One or more classes below 85%."
+            exit 1
+          elif [[ "$(COVERAGE_EXIT_UAT)" == "2" ]]; then
+            echo "COVERAGE REPORT UAT: Script error - check Run Coverage Report step logs."
+            exit 1
+          fi
+          echo "COVERAGE REPORT UAT: All classes meet 85% threshold."
+        displayName: "Enforce Threshold - UAT"
+
+      - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+        displayName: "JWT Key Cleanup - UAT"
+        condition: always()

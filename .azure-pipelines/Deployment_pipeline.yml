@@ -60,11 +60,7 @@ jobs:
           echo "##vso[task.setvariable variable=ENVIRONMENT]$ENVIRONMENT"
           echo "##vso[task.setvariable variable=SOURCE_BRANCH]$SOURCE_BRANCH"
           echo "##vso[task.setvariable variable=TARGET_BRANCH]$TARGET_BRANCH"
-          if [[ "$ENVIRONMENT" == "QA" || "$ENVIRONMENT" == "UAT" ]]; then
-            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
-          else
-            echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
-          fi
+          echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
 
           if [[ -n "$VALIDATION_JOB_ID" && "$VALIDATION_JOB_ID" != "none" ]]; then
             echo "Quick Deploy mode - Validation Job ID: $VALIDATION_JOB_ID"
@@ -249,12 +245,7 @@ jobs:
           HAS_TEST=$([ -f "$(TC_PATH)" ] && [ -s "$(TC_PATH)" ] && echo "true" || echo "false")
           HAS_APEX=$(grep -cE '<name>(ApexClass|ApexTrigger)</name>' "$(MANIFEST_PATH)" 2>/dev/null; true)
 
-          if [[ "$(ENVIRONMENT)" == "QA" || "$(ENVIRONMENT)" == "UAT" ]]; then
-            echo "Target is $(ENVIRONMENT) - bypassing test run (NoTestRun)"
-            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
-            echo "##vso[task.setvariable variable=TEST_CLASSES]"
-
-          elif [[ "$HAS_APEX" -eq 0 ]]; then
+          if [[ "$HAS_APEX" -eq 0 ]]; then
             # No Apex in delta - NoTestRun for all environments
             echo "No Apex in delta - setting NoTestRun"
             echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"

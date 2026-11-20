@@ -1,0 +1,463 @@
+trigger: none
+
+pr:
+  branches:
+    include:
+      - Dev
+      - QA
+      - UAT
+      - master
+
+variables:
+  - group: RCPL-Salesforce-Secrets
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+  - job: check_source_branch
+    displayName: "Check PR Branch Pair"
+    steps:
+      - script: |
+          SOURCE_BRANCH="$(System.PullRequest.SourceBranch)"
+          SOURCE_BRANCH="${SOURCE_BRANCH##refs/heads/}"
+          DEST_BRANCH="$(System.PullRequest.TargetBranch)"
+          DEST_BRANCH="${DEST_BRANCH##refs/heads/}"
+          echo "PR: $SOURCE_BRANCH -> $DEST_BRANCH"
+
+          # Enforce valid pairs only: feature/*->Dev, Dev->QA, QA->UAT, UAT->master
+          VALID="false"
+          if [[ "$SOURCE_BRANCH" == feature/* && "$DEST_BRANCH" == "Dev"    ]]; then VALID="true"; fi
+          if [[ "$SOURCE_BRANCH" == "Dev"  && "$DEST_BRANCH" == "QA"     ]]; then VALID="true"; fi
+          if [[ "$SOURCE_BRANCH" == "QA"   && "$DEST_BRANCH" == "UAT"    ]]; then VALID="true"; fi
+          if [[ "$SOURCE_BRANCH" == "UAT"  && "$DEST_BRANCH" == "master" ]]; then VALID="true"; fi
+
+          if [[ "$VALID" == "false" ]]; then
+            echo "ERROR: Invalid PR branch pair '$SOURCE_BRANCH -> $DEST_BRANCH'"
+            echo "Allowed pairs: feature/*->Dev | Dev->QA | QA->UAT | UAT->master"
+            echo "##vso[task.setvariable variable=should_validate;isOutput=true]false"
+            echo "##vso[task.setvariable variable=invalid_pair;isOutput=true]true"
+          else
+            echo "Valid PR pair - proceeding with validation"
+            echo "##vso[task.setvariable variable=should_validate;isOutput=true]true"
+            echo "##vso[task.setvariable variable=invalid_pair;isOutput=true]false"
+          fi
+        displayName: "Verify PR Branch Pair"
+        name: verify
+
+  - job: notify_invalid_pair
+    displayName: "Notify - Invalid Branch Pair"
+    dependsOn: check_source_branch
+    condition: eq(dependencies.check_source_branch.outputs['verify.invalid_pair'], 'true')
+    steps:
+      - script: |
+          echo "=============================================="
+          echo "WARNING: PR raised from an invalid branch pair"
+          echo "PRs cannot be raised from this branch combination"
+          echo "Allowed: feature/*->Dev | Dev->QA | QA->UAT | UAT->master"
+          echo "Please close this PR and raise from the correct branch"
+          echo "=============================================="
+        displayName: "Notify - Invalid Branch Pair "
+
+  - job: Pre_Validation_Build
+    displayName: "Pre Validation Build"
+    timeoutInMinutes: 180
+    dependsOn: check_source_branch
+    condition: eq(dependencies.check_source_branch.outputs['verify.should_validate'], 'true')
+    steps:
+      - checkout: self
+        fetchDepth: 0
+        persistCredentials: true
+
+      - task: UseNode@1
+        displayName: "Setup Node.js 22"
+        inputs:
+          versionSource: 'spec'
+          version: '22.x'
+
+      - script: |
+          npm uninstall -g @salesforce/cli || true
+
+          npm install -g @salesforce/cli@latest
+
+          sf version
+        displayName: "Install Latest Salesforce CLI"
+
+      - task: DownloadSecureFile@1
+        name: jwtKey
+        displayName: "Download JWT Key Secure File"
+        inputs:
+          secureFile: "server.key"
+
+      - script: chmod 600 "$(jwtKey.secureFilePath)"
+        displayName: "Set JWT Key Permissions"
+
+      - script: |
+          SOURCE_BRANCH="$(System.PullRequest.SourceBranch)"
+          SOURCE_BRANCH="${SOURCE_BRANCH##refs/heads/}"
+          DEST_BRANCH="$(System.PullRequest.TargetBranch)"
+          DEST_BRANCH="${DEST_BRANCH##refs/heads/}"
+          echo "##vso[task.setvariable variable=SOURCE_BRANCH]$SOURCE_BRANCH"
+          echo "##vso[task.setvariable variable=DEST_BRANCH]$DEST_BRANCH"
+          echo "Source: $SOURCE_BRANCH -> Target: $DEST_BRANCH"
+        displayName: "Set Source and Destination Branch"
+
+      - script: |
+          case "$(DEST_BRANCH)" in
+            Dev)
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_DEV_USERNAME)"
+              echo "##vso[task.setvariable variable=SF_INSTANCE_URL]$(SANDBOX_URL)"
+              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_DEV)"
+              ;;
+            QA)
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_QA_USERNAME)"
+              echo "##vso[task.setvariable variable=SF_INSTANCE_URL]$(SANDBOX_URL)"
+              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_QA)"
+              ;;
+            UAT)
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_UAT_USERNAME)"
+              echo "##vso[task.setvariable variable=SF_INSTANCE_URL]$(SANDBOX_URL)"
+              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_UAT)"
+              ;;
+            master)
+              echo "##vso[task.setvariable variable=SF_USERNAME]$(SFDX_AUTH_PROD_USERNAME)"
+              echo "##vso[task.setvariable variable=SF_INSTANCE_URL]$(LOGIN_URL)"
+              echo "##vso[task.setvariable variable=SF_CLIENT_ID]$(SALESFORCE_CONSUMER_KEY_PROD)"
+              ;;
+            *)
+              echo "Invalid target branch: $(DEST_BRANCH)"
+              exit 1
+              ;;
+          esac
+        displayName: "Select Salesforce Org Based on Destination Branch"
+
+      - script: sf org logout --all --no-prompt || true
+        displayName: "Clear Prior Salesforce Sessions"
+
+      - script: |
+          sf org login jwt \
+            --client-id "$(SF_CLIENT_ID)" \
+            --jwt-key-file "$(jwtKey.secureFilePath)" \
+            --username "$(SF_USERNAME)" \
+            --instance-url "$(SF_INSTANCE_URL)" \
+            --set-default
+          if [[ $? -eq 0 ]]; then
+            echo "Successfully authenticated with Salesforce"
+          else
+            echo "Authentication failed"
+            exit 1
+          fi
+        displayName: "Authenticate Salesforce Using JWT"
+
+      # ── Delta package generation from git diff ──────────────────────────────
+      - script: |
+          rm -f /tmp/changed_files.txt
+
+          # Fetch destination branch and the exact PR source commit
+          git fetch origin $(DEST_BRANCH):refs/remotes/origin/$(DEST_BRANCH)
+          git fetch origin $(SOURCE_BRANCH):refs/remotes/origin/$(SOURCE_BRANCH)
+
+          # Verify PR_SOURCE_COMMIT is set and reachable
+          if [[ -z "$PR_SOURCE_COMMIT" ]]; then
+            echo "ERROR: PR_SOURCE_COMMIT is empty - not running in a PR context?"
+            exit 1
+          fi
+
+          # Ensure the exact PR head SHA is locally available
+          git fetch origin "$PR_SOURCE_COMMIT" 2>/dev/null || true
+          if ! git cat-file -e "$PR_SOURCE_COMMIT^{commit}" 2>/dev/null; then
+            echo "ERROR: PR head commit $PR_SOURCE_COMMIT not found in repo after fetch"
+            exit 1
+          fi
+          echo "PR head commit: $PR_SOURCE_COMMIT"
+
+          MERGE_BASE=$(git merge-base origin/$(DEST_BRANCH) "$PR_SOURCE_COMMIT")
+          if [[ -z "$MERGE_BASE" ]]; then
+            echo "ERROR: Could not find merge base between $(DEST_BRANCH) and $PR_SOURCE_COMMIT"
+            exit 1
+          fi
+          echo "Merge base: $MERGE_BASE"
+          echo "Diff range: $MERGE_BASE..$PR_SOURCE_COMMIT"
+
+          ALL_CHANGED=$(git diff --name-only --diff-filter=ACMR "$MERGE_BASE" "$PR_SOURCE_COMMIT")
+          if [[ -z "$ALL_CHANGED" ]]; then
+            echo "ERROR: No difference found - branches are identical, nothing to validate"
+            exit 1
+          fi
+          echo "All changed files in PR:"
+          echo "$ALL_CHANGED"
+
+          CHANGED=$(echo "$ALL_CHANGED" | grep '^force-app/')
+          if [[ -z "$CHANGED" ]]; then
+            echo "ERROR: PR has commits but no force-app/ changes - Salesforce validation cannot proceed"
+            exit 1
+          fi
+          echo "Salesforce changed files:"
+          echo "$CHANGED"
+          echo "#BUILD_ID=$(Build.BuildId)" > /tmp/changed_files.txt
+          echo "$CHANGED" >> /tmp/changed_files.txt
+          echo "##vso[task.setvariable variable=HAS_CHANGES]true"
+          echo "##vso[task.setvariable variable=DIFF_FROM]$MERGE_BASE"
+          echo "##vso[task.setvariable variable=DIFF_TO]$PR_SOURCE_COMMIT"
+        displayName: "Compute Delta Changed Files"
+        env:
+          PR_SOURCE_COMMIT: $(System.PullRequest.SourceCommitId)
+
+      - script: |
+          python3 "$(Build.SourcesDirectory)/scripts/gen_artifacts.py"
+          if [[ $? -ne 0 ]]; then
+            echo "ERROR: gen_artifacts.py failed - no metadata found in delta"
+            exit 1
+          fi
+          SAFE_BRANCH="${SOURCE_BRANCH//\//_}"
+          PACKAGE_PATH="$(Build.SourcesDirectory)/manifest/${SAFE_BRANCH}_package.xml"
+          TC_PATH="$(Build.SourcesDirectory)/manifest/${SAFE_BRANCH}_TestClass.txt"
+          MC_PATH="$(Build.SourcesDirectory)/manifest/${SAFE_BRANCH}_MainClass.txt"
+          if [[ ! -f "$PACKAGE_PATH" ]]; then
+            echo "ERROR: package.xml not generated at $PACKAGE_PATH"
+            exit 1
+          fi
+          echo "##vso[task.setvariable variable=PACKAGE_PATH]$PACKAGE_PATH"
+          echo "##vso[task.setvariable variable=TC_PATH]$TC_PATH"
+          echo "##vso[task.setvariable variable=MC_PATH]$MC_PATH"
+        displayName: "Generate Delta package.xml & TestClass.txt"
+        env:
+          FEATURE_BRANCH: $(SOURCE_BRANCH)
+          BUILD_SOURCES:  $(Build.SourcesDirectory)
+          API_VERSION:    "67.0"
+          DIFF_FROM:      $(DIFF_FROM)
+          DIFF_TO:        $(DIFF_TO)
+
+      - script: |
+          HAS_MAIN=$([ -f "$(MC_PATH)" ] && [ -s "$(MC_PATH)" ] && echo "true" || echo "false")
+          HAS_TEST=$([ -f "$(TC_PATH)" ] && [ -s "$(TC_PATH)" ] && echo "true" || echo "false")
+          HAS_APEX=$(grep -cE '<name>(ApexClass|ApexTrigger)</name>' "$(PACKAGE_PATH)" 2>/dev/null; true)
+
+          if [[ "$HAS_APEX" -eq 0 ]]; then
+            # No Apex in delta - NoTestRun for all environments
+            echo "No Apex in delta - setting NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]"
+
+          elif [[ "$HAS_MAIN" == "true" && "$HAS_TEST" == "true" ]]; then
+            # Main + test class both in delta
+            TEST_CLASSES=$(paste -sd ' ' "$(TC_PATH)")
+            echo "Main + test in delta - RunSpecifiedTests: $TEST_CLASSES"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+
+          elif [[ "$HAS_MAIN" == "true" && "$HAS_TEST" == "false" ]]; then
+            # Main class only - search repo for matching test class
+            echo "Main class in delta but no test class - searching repo..."
+            FOUND_TESTS=""
+            CLASSES_DIR="$(Build.SourcesDirectory)/force-app/main/default/classes"
+            while IFS= read -r main_class; do
+              echo "Searching for test referencing: $main_class"
+              MATCH=$(grep -rl "$main_class" "$CLASSES_DIR" --include="*.cls" 2>/dev/null | while read -r f; do
+                if grep -qiE '@isTest' "$f"; then basename "$f" .cls; fi
+              done | tr '\n' ' ')
+              [[ -n "$MATCH" ]] && FOUND_TESTS="$FOUND_TESTS $MATCH"
+            done < "$(MC_PATH)"
+            FOUND_TESTS=$(echo "$FOUND_TESTS" | xargs)
+            if [[ -n "$FOUND_TESTS" ]]; then
+              echo "Found test classes: $FOUND_TESTS - RunSpecifiedTests"
+              echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+              echo "##vso[task.setvariable variable=TEST_CLASSES]$FOUND_TESTS"
+            elif [[ "$(DEST_BRANCH)" == "master" ]]; then
+              echo "No test class found in repo - PROD (master) falling back to RunLocalTests"
+              echo "##vso[task.setvariable variable=TEST_LEVEL]RunLocalTests"
+              echo "##vso[task.setvariable variable=TEST_CLASSES]"
+            else
+              echo "ERROR: Main class exists in delta but no test class found in repo."
+              echo "Please create a test class for the main class before merging."
+              exit 1
+            fi
+
+          elif [[ "$HAS_MAIN" == "false" && "$HAS_TEST" == "true" ]]; then
+            # Only test class in delta - run that test class directly
+            TEST_CLASSES=$(paste -sd ' ' "$(TC_PATH)")
+            echo "Only test class in delta - RunSpecifiedTests: $TEST_CLASSES"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]RunSpecifiedTests"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]$TEST_CLASSES"
+
+          else
+            echo "No main or test class in delta - setting NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_LEVEL]NoTestRun"
+            echo "##vso[task.setvariable variable=TEST_CLASSES]"
+          fi
+        displayName: "Resolve Test Classes from Delta"
+
+      - script: |
+          echo "=========================================="
+          echo "Package  : $(PACKAGE_PATH)"
+          echo "TestLevel: $(TEST_LEVEL)"
+          echo "Classes  : $(TEST_CLASSES)"
+          echo "=========================================="
+          echo "package.xml contents:"
+          cat "$(PACKAGE_PATH)"
+        displayName: "Display package.xml & Validation Configuration"
+
+      - script: |
+          sf plugins install @salesforce/plugin-code-analyzer@latest
+        displayName: "Install Salesforce Code Analyzer Plugin"
+
+      - script: |
+          sf code-analyzer run \
+            --target "$(Build.SourcesDirectory)/force-app" \
+            --output-file "$(Build.SourcesDirectory)/scanner-results.json" \
+            --output-file "$(Build.SourcesDirectory)/scanner-results.html" || true
+        displayName: "Run Salesforce Code Analyzer (Full Scan)"
+
+      - script: |
+          if [[ ! -f "$(Build.SourcesDirectory)/scanner-results.json" ]]; then
+            echo "No scanner results found - skipping"
+            exit 0
+          fi
+          IST_TIME=$(TZ='Asia/Kolkata' date +'%d-%m-%Y %H:%M:%S IST')
+
+          JSON="$(Build.SourcesDirectory)/scanner-results.json"
+
+          # Write jq filters to temp files (handles both v3 array and v4 {violations:[]} formats)
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s <= 3) | "[SEV-"+($s|tostring)+"] "+$f+":"+($l|tostring)+" - "+($v.rule // $v.ruleName // "")+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))' > /tmp/jq_fail_log.jq
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s > 3) | "[SEV-"+($s|tostring)+"] "+$f+":"+($l|tostring)+" - "+($v.rule // $v.ruleName // "")+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))' > /tmp/jq_warn_log.jq
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s <= 3) | "| "+$f+" | "+($s|tostring)+" | "+($l|tostring)+" | "+($v.rule // $v.ruleName // "")+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))+" |"' > /tmp/jq_fail_table.jq
+          printf '%s\n' '(if type=="array" then .[] else .violations[]? end) | . as $v | ($v.severity | numbers) as $s | (($v.locations[0].file // $v.fileName // $v.file // "unknown") | split("/") | last) as $f | ($v.locations[0].startLine // $v.line // "?") as $l | select($s > 3) | "| "+$f+" | "+($s|tostring)+" | "+($l|tostring)+" | "+($v.rule // $v.ruleName // "")+" | "+($v.message|gsub("\n";" ")|gsub("\r";" "))+" |"' > /tmp/jq_warn_table.jq
+
+          SEV1=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. == 1)] | length' "$JSON" 2>/dev/null || echo 0)
+          SEV2=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. == 2)] | length' "$JSON" 2>/dev/null || echo 0)
+          SEV3=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. == 3)] | length' "$JSON" 2>/dev/null || echo 0)
+          LOW_INFO=$(jq '[((if type=="array" then .[] else .violations[]? end) | .severity | numbers) | select(. > 3)] | length' "$JSON" 2>/dev/null || echo 0)
+
+          echo "===== Code Analyzer Results (${IST_TIME}) ====="
+          echo "Severity 1 (Critical) : $SEV1 violations (threshold: 0)"
+          echo "Severity 2 (High)     : $SEV2 violations (threshold: 5)"
+          echo "Severity 3 (Moderate) : $SEV3 violations (threshold: 10)"
+          echo "Severity 4-5 (Low/Info): $LOW_INFO violations (WARN only)"
+          echo ""
+          echo "===== Severity 1-3 Violations (FAIL) ====="
+          jq -rf /tmp/jq_fail_log.jq "$JSON" 2>/dev/null || true
+          echo ""
+          echo "===== Severity 4-5 Violations (WARN) ====="
+          jq -rf /tmp/jq_warn_log.jq "$JSON" 2>/dev/null || true
+
+          # Build summary markdown
+          SUMMARY="$(Build.SourcesDirectory)/scanner-summary.md"
+          [[ "$SEV1" -gt 0  ]] && S1="FAIL" || S1="OK"
+          [[ "$SEV2" -gt 5  ]] && S2="FAIL" || S2="OK"
+          [[ "$SEV3" -gt 10 ]] && S3="FAIL" || S3="OK"
+          FAIL_COUNT=$(( SEV1 + SEV2 + SEV3 ))
+          {
+            echo "## Salesforce Code Analyzer Results"
+            echo ""
+            echo "**Run Time:** ${IST_TIME}"
+            echo ""
+            echo "| Severity | Count | Threshold | Status |"
+            echo "|---|---|---|---|"
+            echo "| Severity 1 - Critical | $SEV1 | 0 | $S1 |"
+            echo "| Severity 2 - High | $SEV2 | 5 | $S2 |"
+            echo "| Severity 3 - Moderate | $SEV3 | 10 | $S3 |"
+            echo "| Severity 4-5 - Low/Info | $LOW_INFO | WARN only | OK |"
+            echo ""
+            echo "### Severity 1-3 Violations"
+            if [[ "$FAIL_COUNT" -gt 0 ]]; then
+              echo "| Class | Severity | Line | Rule | Message |"
+              echo "|---|---|---|---|---|"
+              jq -rf /tmp/jq_fail_table.jq "$JSON" 2>/dev/null
+            else
+              echo "_No violations found._"
+            fi
+            echo ""
+            echo "### Severity 4-5 Violations (WARN)"
+            if [[ "$LOW_INFO" -gt 0 ]]; then
+              echo "| Class | Severity | Line | Rule | Message |"
+              echo "|---|---|---|---|---|"
+              jq -rf /tmp/jq_warn_table.jq "$JSON" 2>/dev/null
+            else
+              echo "_No violations found._"
+            fi
+          } > "$SUMMARY"
+          echo "##vso[task.uploadsummary]$SUMMARY"
+
+          # Prepend IST timestamp to published HTML
+          HTML="$(Build.SourcesDirectory)/scanner-results.html"
+          if [[ -f "$HTML" ]]; then
+            sed -i "s|<body>|<body><p style='font-family:sans-serif;padding:8px;background:#f0f0f0'><strong>Scan Time (IST):</strong> ${IST_TIME}</p>|" "$HTML" || true
+          fi
+
+          FAILED=0
+          [[ "$SEV1" -gt 0  ]] && { echo "FAIL: Severity 1 count $SEV1 exceeds threshold of 0";  FAILED=1; }
+          [[ "$SEV2" -gt 5  ]] && { echo "FAIL: Severity 2 count $SEV2 exceeds threshold of 5";  FAILED=1; }
+          [[ "$SEV3" -gt 10 ]] && { echo "FAIL: Severity 3 count $SEV3 exceeds threshold of 10"; FAILED=1; }
+          if [[ "$FAILED" -eq 1 ]]; then
+            echo "PIPELINE FAILED: Violation count exceeded threshold. Fix before merging."
+            exit 1
+          fi
+          echo "Code analysis passed - all violation counts within thresholds."
+        displayName: "Enforce Severity Thresholds (Fail on 1-3, Warn on 4-5)"
+
+      - script: |
+          IST_TS=$(TZ='Asia/Kolkata' date +'%d%m%Y_%H%M%S')
+          echo "##vso[task.setvariable variable=SCAN_TS]$IST_TS"
+        displayName: "Set Artifact Timestamp"
+
+      - task: PublishPipelineArtifact@1
+        displayName: "Publish Code Analyzer Results"
+        condition: always()
+        inputs:
+          targetPath: "$(Build.SourcesDirectory)/scanner-results.html"
+          artifact: "code-analyzer-results_$(SCAN_TS)"
+
+      # ── Validate delta package against target org ───────────────────────────
+      - script: |
+          set +e
+          RESULTS_DIR="$(Build.SourcesDirectory)/test-results"
+          mkdir -p "$RESULTS_DIR"
+          read -ra tests_array <<< "$(TEST_CLASSES)"
+          CMD=(sf project deploy start \
+            --dry-run \
+            --target-org "$(SF_USERNAME)" \
+            --manifest "$(PACKAGE_PATH)" \
+            --wait 120 \
+            --ignore-warnings \
+            --test-level "$(TEST_LEVEL)" \
+            --verbose)
+          if [[ "$(TEST_LEVEL)" != "NoTestRun" ]]; then
+            CMD+=(--coverage-formatters json --results-dir "$RESULTS_DIR")
+          fi
+          if [[ "$(TEST_LEVEL)" == "RunSpecifiedTests" ]]; then
+            CMD+=(--tests)
+            for test in "${tests_array[@]}"; do CMD+=("$test"); done
+          fi
+          echo "Executing: ${CMD[@]}"
+          "${CMD[@]}" | tee deploy-result.txt
+          VALIDATION_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          if [[ "$VALIDATION_EXIT_CODE" != "0" ]]; then
+            echo "VALIDATION FAILED"
+            grep -i "error\|failed" deploy-result.txt | head -30 || true
+            exit 1
+          fi
+          echo "VALIDATION PASSED"
+        displayName: "Validate Delta Deployment against Target Org"
+
+      # ── Coverage check scoped to delta classes only ─────────────────────────
+      - script: |
+          APEX_CLASSES=""
+          if [[ -f "$(MC_PATH)" && -s "$(MC_PATH)" ]]; then
+            APEX_CLASSES=$(paste -sd ',' "$(MC_PATH)")
+          fi
+          if [[ -z "$APEX_CLASSES" ]]; then
+            echo "No main classes in delta - skipping per-class coverage check"
+            exit 0
+          fi
+          echo "Checking coverage for delta classes: $APEX_CLASSES"
+          python3 "$(Build.SourcesDirectory)/scripts/check_coverage.py" \
+            --mode local \
+            --results-dir "$(Build.SourcesDirectory)/test-results" \
+            --classes "$APEX_CLASSES"
+        displayName: "Check 85% Per-Class Apex Code Coverage (Delta Classes Only)"
+        condition: and(succeeded(), ne(variables['TEST_LEVEL'], 'NoTestRun'))
+
+      - script: echo "JWT key cleanup handled automatically by Azure DevOps secure file agent"
+        displayName: "JWT Key Cleanup"
+        condition: always()
